@@ -1,0 +1,116 @@
+from typing import Optional, Dict
+from datetime import datetime, timedelta
+
+from sqlmodel import Session
+from sqlalchemy import and_, func
+
+from models.models import User, APIKey, APIUsage
+
+
+class RateLimitService:
+    """
+    Service for managing API rate limiting.
+    """
+
+    def check_rate_limit(self, user_id: str, api_key_id: Optional[int], db: Session) -> Dict[str, bool]:
+        """
+        Check if user/key is within rate limits for all time windows.
+        
+        :param user_id: User ID
+        :param api_key_id: Optional API Key ID for key-specific limits
+        :param db: Database session
+        :return: Dict with rate limit status for each window
+        """
+        # Get user and API key limits
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            return {"allowed": False, "reason": "User not found"}
+
+        api_key = None
+        if api_key_id:
+            api_key = db.query(APIKey).filter(APIKey.id == api_key_id).first()
+
+        # Check each time window
+        windows = {
+            "minute": {"limit": api_key.requests_per_minute if api_key and api_key.requests_per_minute else user.requests_per_minute, "duration": 60},
+            "hour": {"limit": api_key.requests_per_hour if api_key and api_key.requests_per_hour else user.requests_per_hour, "duration": 3600},
+            "day": {"limit": api_key.requests_per_day if api_key and api_key.requests_per_day else user.requests_per_day, "duration": 86400}
+        }
+
+        results = {"allowed": True}
+        
+        for window_type, config in windows.items():
+            window_start = datetime.utcnow() - timedelta(seconds=config["duration"])
+            
+            # Count requests in this window
+            request_count = db.query(func.count(APIUsage.id)).filter(
+                and_(
+                    APIUsage.user_id == user_id,
+                    APIUsage.timestamp >= window_start,
+                    APIUsage.success == True
+                )
+            ).scalar() or 0
+            
+            if request_count >= config["limit"]:
+                results["allowed"] = False
+                results["limit_exceeded"] = window_type
+                results["current_count"] = request_count
+                results["limit"] = config["limit"]
+                break
+            else:
+                results[f"{window_type}_usage"] = f"{request_count}/{config['limit']}"
+
+        return results
+
+    def record_request(self, user_id: str, api_key_id: Optional[int], db: Session):
+        """Record a request for rate limiting purposes (handled by APIUsage table)."""
+        # Rate limiting is tracked through the APIUsage table
+        # This method is here for consistency but actual recording happens in BillingService
+        pass
+
+    def get_rate_limit_status(self, user_id: str, api_key_id: Optional[int], db: Session) -> Dict:
+        """Get current rate limit status and remaining requests."""
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            return {"error": "User not found"}
+
+        api_key = None
+        if api_key_id:
+            api_key = db.query(APIKey).filter(APIKey.id == api_key_id).first()
+
+        # Get limits
+        limits = {
+            "requests_per_minute": api_key.requests_per_minute if api_key and api_key.requests_per_minute else user.requests_per_minute,
+            "requests_per_hour": api_key.requests_per_hour if api_key and api_key.requests_per_hour else user.requests_per_hour,
+            "requests_per_day": api_key.requests_per_day if api_key and api_key.requests_per_day else user.requests_per_day
+        }
+
+        # Get current usage
+        now = datetime.utcnow()
+        windows = {
+            "minute": now - timedelta(minutes=1),
+            "hour": now - timedelta(hours=1), 
+            "day": now - timedelta(days=1)
+        }
+
+        current_usage = {}
+        remaining = {}
+
+        for window_name, window_start in windows.items():
+            count = db.query(func.count(APIUsage.id)).filter(
+                and_(
+                    APIUsage.user_id == user_id,
+                    APIUsage.timestamp >= window_start,
+                    APIUsage.success == True
+                )
+            ).scalar() or 0
+            
+            limit_key = f"requests_per_{window_name}"
+            current_usage[window_name] = count
+            remaining[window_name] = max(0, limits[limit_key] - count)
+
+        return {
+            "limits": limits,
+            "current_usage": current_usage,
+            "remaining": remaining
+        }
