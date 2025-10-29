@@ -1,0 +1,20 @@
+
+# Data (ignore datasets only)
+Use_Case_II/data/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Misc
+.DS_Store
+
+# Data (ignore datasets only)
+Use_Case_II/data/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Misc
+.DS_Store
