@@ -13,7 +13,10 @@ def latest_offers(artifacts: Path) -> Path:
     return files[0]
 
 def main():
-    cfg = Config("config.yaml")
+    # NEW: load config relative to .../Use_Case_II
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = Config(str(repo_root / "config.yaml"))
+
     paths = Paths(cfg.raw_dir, cfg.processed_dir, cfg.artifacts_dir)
     paths.ensure()
 
