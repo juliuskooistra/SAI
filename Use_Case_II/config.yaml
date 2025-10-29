@@ -1,0 +1,60 @@
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  artifacts_dir: artifacts
+
+data_source:
+  kind: kagglehub
+  kagglehub:
+    dataset: "marcusos/lending-club-clean"
+
+
+
+labels:
+  horizons_months: [12, 24, 36]
+
+winsorization:
+  lo: 0.01
+  hi: 0.99
+
+impute:
+  cat_fill: "Unknown"
+
+cleaning:
+  drop_heavy_text: true
+  leakage_cols:
+    - funded_amount
+    - funded_amount_investor
+    - total_pymnt
+    - total_pymnt_inv
+    - total_rec_prncp
+    - total_rec_int
+    - total_rec_late_fee
+    - recoveries
+    - collection_recovery_fee
+    - last_pymnt_d
+    - last_pymnt_amnt
+    - last_credit_pull_d
+    - next_pymnt_d
+    - policy_code
+    - int_rate
+    - grade
+    - sub_grade
+    - out_prncp
+    - out_prncp_inv
+  text_heavy:
+    - title
+    - desc
+    - emp_title
+
+automl:
+  max_runtime_secs: 900         # ~15 min total time budget
+  seed: 42
+  balance_classes: true
+  sort_metric: AUC
+  stopping_metric: AUC
+  nfolds: 5
+  exclude_algos: []             # e.g. ["DeepLearning"]
+  # split ratios used if your dataset has no pre-made split column:
+  valid_size: 0.15
+  holdout_size: 0.15
