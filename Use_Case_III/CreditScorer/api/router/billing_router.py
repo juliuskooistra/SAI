@@ -16,26 +16,6 @@ from services.rate_limit_service import RateLimitService
 from database import get_db
 
 
-def get_authenticated_user(request: Request) -> tuple[str, Optional[int]]:
-    """
-    Get current user ID and API key ID from request state (set by AuthenticationMiddleware).
-    
-    :param request: FastAPI request object
-    :return: Tuple of (user_id, api_key_id)
-    :raises HTTPException: If authentication not found
-    """
-    if not hasattr(request.state, 'user_id') or not request.state.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required (middleware not properly configured)",
-        )
-    
-    user_id = request.state.user_id
-    api_key_id = getattr(request.state, 'api_key_id', None)
-    
-    return user_id, api_key_id
-
-
 class BillingRouter:
     """
     Router for billing, token management, and usage analytics.
@@ -55,6 +35,26 @@ class BillingRouter:
         self.router.get("/usage-stats", response_model=UsageStatsResponse)(self.get_usage_stats)
         self.router.get("/rate-limit-status", response_model=RateLimitStatus)(self.get_rate_limit_status)
 
+
+    def _get_authenticated_user(self, request: Request) -> tuple[str, Optional[int]]:
+        """
+        Get current user ID and API key ID from request state (set by AuthenticationMiddleware).
+        
+        :param request: FastAPI request object
+        :return: Tuple of (user_id, api_key_id)
+        :raises HTTPException: If authentication not found
+        """
+        if not hasattr(request.state, 'user_id') or not request.state.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required (middleware not properly configured)",
+            )
+        
+        user_id = request.state.user_id
+        api_key_id = getattr(request.state, 'api_key_id', None)
+        
+        return user_id, api_key_id
+
     def purchase_tokens(self, 
                        request: TokenPurchaseRequest,
                        req: Request,
@@ -68,7 +68,7 @@ class BillingRouter:
         :return: Purchase response
         :raises HTTPException: If purchase fails
         """
-        user_id, _ = get_authenticated_user(req)
+        user_id, _ = self._get_authenticated_user(req)
         
         if request.amount <= 0:
             raise HTTPException(
@@ -87,6 +87,7 @@ class BillingRouter:
         
         success = self.billing_service.add_tokens(
             user_id=user_id,
+            transaction_id=transaction_id,
             amount=request.amount,
             transaction_type="purchase",
             description=f"Token purchase via {request.payment_method}",
@@ -119,21 +120,17 @@ class BillingRouter:
         :param db: Database session
         :return: Balance information
         """
-        user_id, _ = get_authenticated_user(req)
+        user_id, _ = self._get_authenticated_user(req)
         
-        balance = self.billing_service.get_user_balance(user_id, db)
-        if balance is None:
+        user = self.billing_service.get_user(user_id, db)
+        if user is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-
-        # Get additional user info
-        from models.models import User
-        user = db.query(User).filter(User.user_id == user_id).first()
         
         return {
-            "current_balance": balance,
+            "current_balance": user.token_balance,
             "total_purchased": user.total_tokens_purchased,
             "total_used": user.total_tokens_used,
             "username": user.username
@@ -151,7 +148,7 @@ class BillingRouter:
         :param db: Database session
         :return: Usage statistics
         """
-        user_id, _ = get_authenticated_user(req)
+        user_id, _ = self._get_authenticated_user(req)
         
         if days <= 0 or days > 365:
             raise HTTPException(
@@ -186,7 +183,7 @@ class BillingRouter:
         :param db: Database session
         :return: Rate limit status
         """
-        user_id, api_key_id = get_authenticated_user(req)
+        user_id, api_key_id = self._get_authenticated_user(req)
         
         status_data = self.rate_limit_service.get_rate_limit_status(user_id, api_key_id, db)
         

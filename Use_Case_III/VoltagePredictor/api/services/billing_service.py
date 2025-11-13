@@ -4,19 +4,24 @@ Billing and rate limiting service for API usage management.
 
 from datetime import datetime, timedelta
 from typing import Optional, Dict
-from sqlmodel import Session
+from sqlmodel import Session, select
 from sqlalchemy import and_, func
 
-from models.models import User, APIKey, APIUsage, TokenTransaction, RateLimitState
+from models.models import User, APIUsage, TokenTransaction
 
 
 class BillingService:
     """
     Service for managing user tokens, billing, and usage tracking.
     """
+    def get_user(self, user_id: str, db: Session) -> Optional[User]:
+        """Get current token balance for a user."""
+        user = db.exec(select(User).where(User.user_id == user_id)).first()
+        return user if user else None
+
     def get_user_balance(self, user_id: str, db: Session) -> Optional[float]:
         """Get current token balance for a user."""
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = self.get_user(user_id, db)
         return user.token_balance if user else None
 
     def check_sufficient_balance(self, user_id: str, required_tokens: float, db: Session) -> bool:
@@ -37,7 +42,7 @@ class BillingService:
         :param db: Database session
         :return: True if successful, False if insufficient balance
         """
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = self.get_user(user_id, db)
         if not user or user.token_balance < tokens_consumed:
             return False
 
@@ -72,10 +77,10 @@ class BillingService:
         db.commit()
         return True
 
-    def add_tokens(self, user_id: str, amount: float, transaction_type: str, 
+    def add_tokens(self, user_id: str, transaction_id: str, amount: float, transaction_type: str, 
                    description: str, db: Session) -> bool:
         """Add tokens to a user's account."""
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = self.get_user(user_id, db)
         if not user:
             return False
 
@@ -92,7 +97,8 @@ class BillingService:
             amount=amount,
             previous_balance=previous_balance,
             new_balance=user.token_balance,
-            description=description
+            description=description,
+            reference_id=transaction_id
         )
         db.add(transaction)
         db.commit()
@@ -103,24 +109,24 @@ class BillingService:
         since = datetime.utcnow() - timedelta(days=days)
         
         # Get usage data
-        usage_query = db.query(APIUsage).filter(
+        usage_query = db.exec(select(APIUsage).where(
             and_(APIUsage.user_id == user_id, APIUsage.timestamp >= since)
-        )
+        )).all()
         
-        total_requests = usage_query.count()
-        total_tokens = usage_query.with_entities(func.sum(APIUsage.tokens_consumed)).scalar() or 0
+        total_requests = len(usage_query)
+        total_tokens = sum(item.tokens_consumed for item in usage_query) or 0
         
         # Get usage by endpoint
-        endpoint_stats = db.query(
+        endpoint_stats = db.exec(select(
             APIUsage.endpoint,
             func.count(APIUsage.id).label('requests'),
             func.sum(APIUsage.tokens_consumed).label('tokens')
-        ).filter(
+        ).where(
             and_(APIUsage.user_id == user_id, APIUsage.timestamp >= since)
-        ).group_by(APIUsage.endpoint).all()
+        ).group_by(APIUsage.endpoint)).all()
 
         # Get current balance
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = self.get_user(user_id, db)
         
         return {
             "period_days": days,

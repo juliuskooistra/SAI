@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 from fastapi import Request, Response, status
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from database import get_db
 from models.models import APIKey
@@ -83,7 +83,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             
         # Get API key record for downstream use
         hashed_key = hashlib.sha256(f"{api_key}{self.auth_service.api_key_secret}".encode('utf-8')).hexdigest()
-        api_key_record = db.query(APIKey).filter(APIKey.hashed_key == hashed_key).first()
+        api_key_record = db.exec(select(APIKey).filter(APIKey.hashed_key == hashed_key)).first()
         api_key_id = api_key_record.id if api_key_record else None
         
         return user_id, api_key_id

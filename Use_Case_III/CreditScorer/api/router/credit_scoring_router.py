@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Depends
 from sqlmodel import Session
 from models.models import CreditScoreResponse, CreditScoreRequest, CreditScoreListRequest, CreditScoreListResponse
 from services.credit_scoring_service import CreditScoringService
-
+import pandas as pd
 from database import get_db
 
 class CreditScoringRouter:
@@ -27,7 +27,11 @@ class CreditScoringRouter:
         BillingRateLimitMiddleware before this endpoint is reached.
 
         """
-        return self.credit_scoring_service.score(request, session)
+        df = pd.DataFrame([request.model_dump()])
+
+        scores = self.credit_scoring_service.score(df, session)
+
+        return CreditScoreResponse.model_validate(scores[0], from_attributes=True)
 
     def get_credit_scores_batch(self, request: CreditScoreListRequest, req: Request, session: Session = Depends(get_db)):
         """
@@ -35,5 +39,11 @@ class CreditScoringRouter:
 
         Authentication, billing, and rate limiting are automatically handled by the
         BillingRateLimitMiddleware before this endpoint is reached.
+
+        Note: only the creation of the dataframe is different from the single request version.
         """
-        return self.credit_scoring_service.score_batch(request, session)
+        df = pd.DataFrame([item.model_dump() for item in request.data])
+
+        scores = self.credit_scoring_service.score(df, session)
+
+        return CreditScoreListResponse(data=[CreditScoreResponse.model_validate(score, from_attributes=True) for score in scores])

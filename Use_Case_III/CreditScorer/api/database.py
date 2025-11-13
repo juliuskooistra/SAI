@@ -11,7 +11,8 @@ from loanrisk_project.scoring.pricing import PricingEngine
 
 # parquet Path
 PARQUET_PATH = "./data/processed/loans_clean.parquet"
-# Database setup
+# Database setup 
+# For production use, consider PostgreSQL or another robust RDBMS.
 DATABASE_URL = "sqlite:///./api/credit_risk.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
@@ -31,9 +32,10 @@ def init_database():
     """Initialize the database and create tables if they don't exist."""
     create_tables()
     with Session(engine) as session:
+        # Check if the CreditScore table already has data, if so, skip seeding (this means the DB is already initialized and has data)
         exists = session.exec(select(CreditScore).limit(1)).first()
         if exists:
-            return  # already seeded
+            return  # already seeded, prevent to run any further iniitialization code.
 
     # Read the first 10000 items from the parquet file and create a batch of responses
     df = pd.read_parquet(PARQUET_PATH).head(10000)

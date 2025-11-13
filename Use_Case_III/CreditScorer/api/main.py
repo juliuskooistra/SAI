@@ -69,6 +69,7 @@ class CreditRiskAPI:
             allow_headers=["*"],  # Allow all headers
         )
 
+
     def _register_routes(self):
         """
         Register the API routes for peak voltage predictions, authentication, and billing.
@@ -84,9 +85,10 @@ class CreditRiskAPI:
         self.app.include_router(PortfolioOptimizationRouter().router, prefix="/api", tags=["portfolio_optimization"])
 
         # Add a custom docs route
-        self.app.add_api_route("/docs", self.get_docs, include_in_schema=False)
+        self.app.add_api_route("/docs", self._get_docs, include_in_schema=False)
 
-    def get_docs(self):
+
+    def _get_docs(self):
         """
         Custom documentation route for the API.
         """
@@ -105,7 +107,7 @@ class CreditRiskAPI:
         """
         uvicorn.run(self.app, host=host, port=port)
 
-    
+# This is merely here for testing purposes. In the real deployment, use uvicorn command line.
 if __name__ == "__main__":
     """
     Entry point to run the Credit Risk API.

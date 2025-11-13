@@ -1,7 +1,7 @@
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 from sqlalchemy import and_, func
 
 from models.models import User, APIKey, APIUsage
@@ -11,6 +11,38 @@ class RateLimitService:
     """
     Service for managing API rate limiting.
     """
+    def _get_user(self, user_id: str, db: Session) -> Optional[User]:
+        """Get user by user_id."""
+        user = db.exec(select(User).where(User.user_id == user_id)).first()
+        return user if user else None
+    
+    def _get_api_key(self, api_key_id: int, db: Session) -> Optional[APIKey]:
+        """Get API key by ID."""
+        api_key = db.exec(select(APIKey).where(APIKey.id == api_key_id)).first()
+        return api_key if api_key else None
+    
+    def _get_request_count(self, user_id: str, api_key_id: Optional[int], since: datetime, db: Session) -> int:
+        """
+        Get the count of successful requests made by a user (and optionally API key) since a given time.
+        
+        :param user_id: User ID
+        :param api_key_id: Optional API Key ID
+        :param since: Datetime to count requests since
+        :param db: Database session
+        :return: Count of requests
+        """
+        query = select(APIUsage).where(
+            and_(
+                APIUsage.user_id == user_id,
+                APIUsage.timestamp >= since,
+                APIUsage.success == True
+            )
+        )
+        
+        if api_key_id:
+            query = query.where(APIUsage.api_key_id == api_key_id)
+
+        return len(db.exec(query).all())
 
     def check_rate_limit(self, user_id: str, api_key_id: Optional[int], db: Session) -> Dict[str, bool]:
         """
@@ -22,13 +54,13 @@ class RateLimitService:
         :return: Dict with rate limit status for each window
         """
         # Get user and API key limits
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = self._get_user(user_id, db)
         if not user:
             return {"allowed": False, "reason": "User not found"}
 
         api_key = None
         if api_key_id:
-            api_key = db.query(APIKey).filter(APIKey.id == api_key_id).first()
+            api_key = self._get_api_key(api_key_id, db)
 
         # Check each time window
         windows = {
@@ -37,19 +69,17 @@ class RateLimitService:
             "day": {"limit": api_key.requests_per_day if api_key and api_key.requests_per_day else user.requests_per_day, "duration": 86400}
         }
 
+        print(windows)  # Debugging line
+
         results = {"allowed": True}
         
         for window_type, config in windows.items():
             window_start = datetime.utcnow() - timedelta(seconds=config["duration"])
             
             # Count requests in this window
-            request_count = db.query(func.count(APIUsage.id)).filter(
-                and_(
-                    APIUsage.user_id == user_id,
-                    APIUsage.timestamp >= window_start,
-                    APIUsage.success == True
-                )
-            ).scalar() or 0
+            request_count = self._get_request_count(user_id, api_key_id, window_start, db)
+
+            print(config["limit"], request_count)
             
             if request_count >= config["limit"]:
                 results["allowed"] = False
@@ -70,13 +100,13 @@ class RateLimitService:
 
     def get_rate_limit_status(self, user_id: str, api_key_id: Optional[int], db: Session) -> Dict:
         """Get current rate limit status and remaining requests."""
-        user = db.query(User).filter(User.user_id == user_id).first()
+        user = self._get_user(user_id, db)
         if not user:
             return {"error": "User not found"}
 
         api_key = None
         if api_key_id:
-            api_key = db.query(APIKey).filter(APIKey.id == api_key_id).first()
+            api_key = self._get_api_key(api_key_id, db)
 
         # Get limits
         limits = {
@@ -97,14 +127,7 @@ class RateLimitService:
         remaining = {}
 
         for window_name, window_start in windows.items():
-            count = db.query(func.count(APIUsage.id)).filter(
-                and_(
-                    APIUsage.user_id == user_id,
-                    APIUsage.timestamp >= window_start,
-                    APIUsage.success == True
-                )
-            ).scalar() or 0
-            
+            count = self._get_request_count(user_id, api_key_id, window_start, db)
             limit_key = f"requests_per_{window_name}"
             current_usage[window_name] = count
             remaining[window_name] = max(0, limits[limit_key] - count)

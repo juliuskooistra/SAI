@@ -55,10 +55,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 
         return False
 
-    def _check_rate_limits(self, user_id: str, api_key_id: Optional[int], db: Session) -> Dict[str, Any]:
-        """Check if request is within rate limits."""
-        return self.rate_limit_service.check_rate_limit(user_id, api_key_id, db)
-
     async def dispatch(self, request: Request, call_next):
         """Main rate limiting middleware logic."""
         path = request.url.path
@@ -85,7 +81,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             api_key_id = getattr(request.state, 'api_key_id', None)
 
             # Check rate limits
-            rate_limit_result = self._check_rate_limits(user_id, api_key_id, db)
+            rate_limit_result = self.rate_limit_service.check_rate_limit(user_id, api_key_id, db)
             if not rate_limit_result["allowed"]:
                 error_detail = (
                     f"Rate limit exceeded for {rate_limit_result.get('limit_exceeded', 'unknown')} window. "

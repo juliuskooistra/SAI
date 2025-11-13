@@ -161,7 +161,7 @@ class APITestSuite:
         login_data = {
             "username": self.test_user_data["username"],
             "password": self.test_user_data["password"],
-            "api_key_name": "test-key"
+            "name": "test-key"
         }
         
         login_response = await self.make_request(

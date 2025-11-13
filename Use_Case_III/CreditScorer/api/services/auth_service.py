@@ -4,12 +4,9 @@ import uuid
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, List
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from models.models import (
-    UserRegistrationRequest, UserRegistrationResponse, 
-    LoginResponse, APIKeyRequest, APIKeyResponse, APIKeyUsageResponse, User, APIKey
-)
+from models.models import User, APIKey
 
 
 class AuthService:
@@ -43,32 +40,35 @@ class AuthService:
         """Hash an API key for secure storage."""
         return hashlib.sha256(f"{api_key}{self.api_key_secret}".encode('utf-8')).hexdigest()
 
-    def register_user(self, request: UserRegistrationRequest, db: Session) -> Optional[UserRegistrationResponse]:
+
+    def register_user(self, username: str, email: str, password: str, db: Session) -> Optional[User]:
         """
         Register a new user.
         
-        :param request: User registration request
+        :param username: Username for registration
+        :param email: Email for registration
+        :param password: Password for registration
         :param db: Database session
         :return: UserRegistrationResponse if successful, None otherwise
         """
         # Check if username already exists
-        existing_user = db.query(User).filter(User.username == request.username).first()
+        existing_user = db.exec(select(User).filter(User.username == username)).first()
         if existing_user:
             return None
 
         # Check if email already exists
-        existing_email = db.query(User).filter(User.email == request.email).first()
+        existing_email = db.exec(select(User).filter(User.email == email)).first()
         if existing_email:
             return None
 
         # Create new user
         user_id = str(uuid.uuid4())
-        hashed_password = self._hash_password(request.password)
+        hashed_password = self._hash_password(password)
         
         new_user = User(
             user_id=user_id,
-            username=request.username,
-            email=request.email,
+            username=username,
+            email=email,
             hashed_password=hashed_password,
             created_at=datetime.utcnow(),
             is_active=True,
@@ -79,14 +79,9 @@ class AuthService:
         db.commit()
         db.refresh(new_user)
 
-        return UserRegistrationResponse(
-            message="User registered successfully",
-            user_id=user_id,
-            username=request.username,
-            email=request.email
-        )
+        return new_user
 
-    def authenticate_user(self, username: str, password: str, db: Session) -> Optional[LoginResponse]:
+    def authenticate_user(self, username: str, password: str, db: Session) -> Optional[User]:
         """
         Authenticate a user with username and password.
         
@@ -95,20 +90,16 @@ class AuthService:
         :param db: Database session
         :return: LoginResponse if successful, None otherwise
         """
-        user = db.query(User).filter(User.username == username).first()
+        user = db.exec(select(User).filter(User.username == username)).first()
         if not user or not user.is_active:
             return None
             
         if not self._verify_password(password, user.hashed_password):
             return None
             
-        return LoginResponse(
-            message="Login successful",
-            user_id=user.user_id,
-            username=user.username
-        )
+        return user
 
-    def generate_api_key(self, username: str, request: APIKeyRequest, db: Session) -> Optional[APIKeyResponse]:
+    def generate_api_key(self, username: str, name: str, expired_in_days: Optional[int], db: Session) -> tuple[str, APIKey]:
         """
         Generate a new API key for a user.
         
@@ -117,7 +108,7 @@ class AuthService:
         :param db: Database session
         :return: APIKeyResponse if successful, None otherwise
         """
-        user = db.query(User).filter(User.username == username).first()
+        user = db.exec(select(User).filter(User.username == username)).first()
         if not user or not user.is_active:
             return None
 
@@ -127,14 +118,14 @@ class AuthService:
         
         created_at = datetime.utcnow()
         expires_at = None
-        if request.expires_in_days:
-            expires_at = created_at + timedelta(days=request.expires_in_days)
+        if expired_in_days:
+            expires_at = created_at + timedelta(days=expired_in_days)
 
         # Store only the hashed key - NEVER store the plain text API key
-        new_api_key = APIKey(
+        api_key_stored = APIKey(
             hashed_key=hashed_key,
             user_id=user.user_id,
-            name=request.name,
+            name=name,
             created_at=created_at,
             expires_at=expires_at,
             is_active=True,
@@ -143,16 +134,11 @@ class AuthService:
             requests_per_day=user.requests_per_day
         )
 
-        db.add(new_api_key)
+        db.add(api_key_stored)
         db.commit()
 
         # Return the plain text API key only once - it won't be stored
-        return APIKeyResponse(
-            api_key=api_key,  # This is the only time we return the plain text key
-            name=request.name,
-            created_at=created_at,
-            expires_at=expires_at
-        )
+        return api_key, api_key_stored
 
     def validate_api_key(self, api_key: str, db: Session) -> Optional[str]:
         """
@@ -166,10 +152,10 @@ class AuthService:
         hashed_key = self._hash_api_key(api_key)
         
         # Look up the key by its hash - we never store plain text keys
-        key_record = db.query(APIKey).filter(
+        key_record = db.exec(select(APIKey).filter(
             APIKey.hashed_key == hashed_key,
             APIKey.is_active == True
-        ).first()
+        )).first()
         
         if not key_record:
             return None
@@ -182,7 +168,7 @@ class AuthService:
             return None
 
         # Check if the user is still active
-        user = db.query(User).filter(User.user_id == key_record.user_id).first()
+        user = db.exec(select(User).filter(User.user_id == key_record.user_id)).first()
         if not user or not user.is_active:
             return None
 
@@ -192,7 +178,7 @@ class AuthService:
 
         return key_record.user_id
 
-    def list_user_api_keys(self, username: str, db: Session) -> Optional[List[APIKeyUsageResponse]]:
+    def list_user_api_keys(self, user_id: str, db: Session) -> List[APIKey]:
         """
         List all API keys for a user with usage statistics.
         
@@ -200,21 +186,8 @@ class AuthService:
         :param db: Database session
         :return: List of API key usage info if user exists, None otherwise
         """
-        user = db.query(User).filter(User.username == username).first()
-        if not user:
-            return None
+        return db.exec(select(APIKey).filter(APIKey.user_id == user_id)).all()
 
-        api_keys = db.query(APIKey).filter(APIKey.user_id == user.user_id).all()
-        
-        return [
-            APIKeyUsageResponse(
-                api_key_name=key.name,
-                created_at=key.created_at,
-                last_used=key.last_used,
-                is_active=key.is_active
-            )
-            for key in api_keys
-        ]
 
     def revoke_api_key(self, username: str, api_key_name: str, db: Session) -> bool:
         """
@@ -225,14 +198,14 @@ class AuthService:
         :param db: Database session
         :return: True if revoked successfully, False otherwise
         """
-        user = db.query(User).filter(User.username == username).first()
+        user = db.exec(select(User).filter(User.username == username)).first()
         if not user:
             return False
 
-        api_key = db.query(APIKey).filter(
+        api_key = db.exec(select(APIKey).filter(
             APIKey.user_id == user.user_id,
             APIKey.name == api_key_name
-        ).first()
+        )).first()
         
         if not api_key:
             return False

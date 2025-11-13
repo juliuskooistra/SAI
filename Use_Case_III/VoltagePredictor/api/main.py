@@ -81,9 +81,10 @@ class PeakVoltageAPI:
         self.app.include_router(PeakVoltageRouter().router, prefix="/api", tags=["peak_voltage"])
         
         # Add a custom docs route
-        self.app.add_api_route("/docs", self.get_docs, include_in_schema=False)
+        self.app.add_api_route("/docs", self._get_docs, include_in_schema=False)
 
-    def get_docs(self):
+
+    def _get_docs(self):
         """
         Custom documentation route for the API.
         """
@@ -102,7 +103,7 @@ class PeakVoltageAPI:
         """
         uvicorn.run(self.app, host=host, port=port)
 
-    
+# This is merely here for testing purposes. In the real deployment, use uvicorn command line.
 if __name__ == "__main__":
     """
     Entry point to run the Peak Voltage API.

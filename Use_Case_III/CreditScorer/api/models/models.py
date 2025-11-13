@@ -41,8 +41,8 @@ class CreditScoreBase(SQLModel):
     revol_util: Optional[float] = None
     total_acc: Optional[int] = None
     term_months: Optional[int] = None
-    emp_length_years: Optional[int] = None
-    fico_mid: Optional[int] = None
+    emp_length_years: Optional[float] = None # changed to float
+    fico_mid: Optional[float] = None    # changed to float
     credit_hist_months: Optional[float] = None
     income_to_loan: Optional[float] = None
     revol_util_ratio: Optional[float] = None
@@ -262,9 +262,9 @@ class LoginResponse(BaseModel):
     username: str
 
 
-class APIKeyRequest(BaseModel):
+class APIKeyRequest(LoginRequest):
     """
-    Request model for API key generation
+    Request model for API key generation with credentials
     """
     name: str  # Friendly name for the API key
     expires_in_days: Optional[int] = 30  # Default 30 days
@@ -279,13 +279,11 @@ class APIKeyResponse(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime] = None
 
-
-class APIKeyListResponse(BaseModel):
+class APIKeyListRequest(BaseModel):
     """
-    Response model for listing API keys
+    Request model for listing API keys
     """
-    keys: List[APIKeyResponse]
-
+    user_id: str
 
 class APIKeyUsageResponse(BaseModel):
     """
@@ -295,6 +293,13 @@ class APIKeyUsageResponse(BaseModel):
     created_at: datetime
     last_used: Optional[datetime] = None
     is_active: bool
+
+class APIKeyListResponse(BaseModel):
+    """
+    Response model for listing API keys
+    """
+    keys: List[APIKeyUsageResponse]
+
 
 
 # Billing and Usage Models
