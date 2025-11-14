@@ -8,7 +8,7 @@ I have a machine learning model that predicts the peak voltage on the net given 
 # Running the thing
 
 ```
-cd VoltagePredictor
+cd VoltagePredictor/front_end
 
 pnpm install
 ```

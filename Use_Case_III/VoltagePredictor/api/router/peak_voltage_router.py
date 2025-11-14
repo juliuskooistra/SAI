@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Request
-from models.models import PeakVoltageListRequest, PeakVoltageListResponse
-from services.peak_voltage_service import PeakVoltageService
+import pandas as pd
+
+from ..models.models import PeakVoltageListRequest, PeakVoltageListResponse, PeakVoltageResponse
+from ..services.peak_voltage_service import PeakVoltageService
 
 class PeakVoltageRouter:
     def __init__(self):
@@ -34,4 +36,13 @@ class PeakVoltageRouter:
         # 4. Added user context to request.state
         
         # The middleware will consume tokens and log usage after successful response
-        return self.peak_voltage_service.get_peak_voltages(request)
+        peak_voltage_data = pd.DataFrame([data.model_dump() for data in request.data])
+
+        peak_voltage_results = self.peak_voltage_service.get_peak_voltages(peak_voltage_data, request.return_scaled)
+
+        return PeakVoltageListResponse(
+            data=[
+                PeakVoltageResponse(**data.model_dump(), U_max=prediction)
+                for data, prediction in zip(request.data, peak_voltage_results)
+            ]
+        )

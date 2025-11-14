@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlmodel import Session
 
-from models.models import (
+from ..models.models import (
     UserRegistrationRequest, UserRegistrationResponse,
     LoginRequest, LoginResponse, APIKeyRequest, APIKeyResponse, APIKeyUsageResponse, APIKeyListRequest, APIKeyListResponse
 )
-from services.auth_service import AuthService
-from database import get_db
+from ..services.auth_service import AuthService
+from ..database import get_db
 
 
 class AuthRouter:

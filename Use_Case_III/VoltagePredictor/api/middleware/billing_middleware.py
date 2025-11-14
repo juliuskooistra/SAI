@@ -11,9 +11,9 @@ from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlmodel import Session
 
-from database import get_db
-from models.models import APIUsage
-from services.billing_service import BillingService
+from ..database import get_db
+from ..models.models import APIUsage
+from ..services.billing_service import BillingService
 
 
 class BillingMiddleware(BaseHTTPMiddleware):

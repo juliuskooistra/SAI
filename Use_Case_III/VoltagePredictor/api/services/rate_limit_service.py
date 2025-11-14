@@ -1,10 +1,9 @@
 from typing import Optional, Dict
 from datetime import datetime, timedelta
-
 from sqlmodel import Session, select
-from sqlalchemy import and_, func
+from sqlalchemy import and_
 
-from models.models import User, APIKey, APIUsage
+from ..models.models import User, APIKey, APIUsage
 
 
 class RateLimitService:

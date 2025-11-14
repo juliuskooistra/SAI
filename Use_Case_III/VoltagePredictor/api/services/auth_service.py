@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from sqlmodel import Session, select
 
-from models.models import User, APIKey
+from ..models.models import User, APIKey
 
 
 class AuthService:

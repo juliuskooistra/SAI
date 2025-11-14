@@ -5,13 +5,12 @@ This middleware handles rate limiting checks for authenticated users.
 Requires AuthenticationMiddleware to be applied first.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
-from sqlmodel import Session
 
-from database import get_db
-from services.rate_limit_service import RateLimitService
+from ..database import get_db
+from ..services.rate_limit_service import RateLimitService
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

@@ -23,4 +23,4 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 
 # Run FastAPI with Uvicorn (adjust if your main file isn't main.py)
-CMD ["python3", "api/main.py"]
+CMD ["uvicorn", "api.expose_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

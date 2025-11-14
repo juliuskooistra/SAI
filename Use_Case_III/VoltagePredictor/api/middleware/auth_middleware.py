@@ -12,9 +12,9 @@ from fastapi.security.utils import get_authorization_scheme_param
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlmodel import Session, select
 
-from database import get_db
-from models.models import APIKey
-from services.auth_service import AuthService
+from ..database import get_db
+from ..models.models import APIKey
+from ..services.auth_service import AuthService
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):

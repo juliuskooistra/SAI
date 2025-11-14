@@ -1,7 +1,8 @@
 import pandas as pd
+import numpy as np
 import joblib
 from pathlib import Path
-from models.models import PeakVoltageListResponse, PeakVoltageRequest, PeakVoltageListRequest, PeakVoltageResponse
+
 
 class PeakVoltageService:
     """
@@ -39,29 +40,23 @@ class PeakVoltageService:
         return self.scaler
 
 
-    def get_peak_voltages(self, request):
+    def get_peak_voltages(self, data: pd.DataFrame, return_scaled: bool) -> np.ndarray:
         """
         Get peak voltages data
         """
         # Validate and parse the request
-        if not isinstance(request, PeakVoltageListRequest):
-            raise ValueError("Invalid request format. Expected PeakVoltageListRequest.")
+        if not isinstance(data, pd.DataFrame):
+            raise ValueError("Invalid data format. Expected a pandas DataFrame.")
 
         pipeline = self._load_pipeline()
 
         # Convert the request data to the format expected by the pipeline
         # The pipeline expects a list of dictionaries, where each dictionary corresponds to a PeakVoltageRequest
-        peak_voltage_data = pd.DataFrame([data.model_dump() for data in request.data])
-        peak_voltage_data = pipeline.predict(peak_voltage_data)
+        peak_voltage_data = pipeline.predict(data)
 
         # If the user wants scaled data do nothing, else convert the predicted data back to the original scale
-        if not request.return_scaled:
+        if not return_scaled:
             scaler = self._load_scaler()
-            peak_voltage_data = scaler.inverse_transform(peak_voltage_data.reshape(-1, 1))
+            peak_voltage_data = scaler.inverse_transform(peak_voltage_data.reshape(-1, 1)).ravel()
 
-        return PeakVoltageListResponse(
-            data=[
-                PeakVoltageResponse(**data.model_dump(), U_max=prediction)
-                for data, prediction in zip(request.data, peak_voltage_data)
-            ]
-        )
+        return peak_voltage_data

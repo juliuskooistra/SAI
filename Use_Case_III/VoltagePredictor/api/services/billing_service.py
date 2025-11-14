@@ -7,7 +7,7 @@ from typing import Optional, Dict
 from sqlmodel import Session, select
 from sqlalchemy import and_, func
 
-from models.models import User, APIUsage, TokenTransaction
+from ..models.models import User, APIUsage, TokenTransaction
 
 
 class BillingService:

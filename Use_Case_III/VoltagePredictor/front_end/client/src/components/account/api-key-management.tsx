@@ -35,7 +35,7 @@ export default function ApiKeyManagement() {
     defaultValues: {
       username: username,
       password: "",
-      api_key_name: "",
+      name: "",
       expires_in_days: 30,
     },
   });
@@ -233,7 +233,7 @@ export default function ApiKeyManagement() {
 
                       <FormField
                         control={form.control}
-                        name="api_key_name"
+                        name="name"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Key Name</FormLabel>

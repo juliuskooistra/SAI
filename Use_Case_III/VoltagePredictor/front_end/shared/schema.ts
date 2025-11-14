@@ -81,7 +81,7 @@ export const userLoginSchema = z.object({
 export const apiKeyGenerationSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  api_key_name: z.string().min(1, "API key name is required"),
+  name: z.string().min(1, "API key name is required"),
   expires_in_days: z.number().min(1).max(365).default(30),
 });
 
