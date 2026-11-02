@@ -1,0 +1,10 @@
+# Direct dependencies of the API (and the scheduler, which uses the same image).
+# Compile the pinned lock with:  uv pip compile requirements.in -o requirements.txt
+fastapi
+uvicorn
+sqlmodel
+bcrypt
+scalar_fastapi
+openai
+httpx
+tzdata
