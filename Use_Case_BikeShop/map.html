@@ -162,8 +162,8 @@ aside p { margin: 0; }
   <section class="split" aria-labelledby="split-h">
     <h2 id="split-h">Swapping the use case, by lines of code</h2>
     <p class="lede">Replace the bike shop with, say, a library that lends books or a gym that books classes. Write the new SPEC §1–§7 first, then replace the right-hand column.</p>
-    <div class="bar" role="img" aria-label="About 50 percent stays, 15 percent is adapted, 35 percent is replaced">
-      <div class="b-stay" style="flex:50">stays · ~50%</div><div class="b-adapt" style="flex:15">adapt · ~15%</div><div class="b-repl" style="flex:35">replace · ~35%</div>
+    <div class="bar" role="img" aria-label="About 48 percent stays, 12 percent is adapted, 40 percent is replaced">
+      <div class="b-stay" style="flex:48">stays · ~48%</div><div class="b-adapt" style="flex:12">adapt · ~12%</div><div class="b-repl" style="flex:40">replace · ~40%</div>
     </div>
     <div class="cols">
       <div><h3><span class="sw" style="border-color:var(--stay);background:var(--stay-tint)"></span>Stays</h3>
@@ -172,11 +172,12 @@ aside p { margin: 0; }
           <li>api/middleware/* <em>auth, rate limit, billing</em></li>
           <li>api/jobqueue/queue.py, api/mail/, api/content/</li>
           <li>api/services/ auth, billing, rate_limit, inference, analytics, errors</li>
-          <li>api/router/ auth, billing, job</li>
+          <li>api/router/ auth, billing, job, assistant</li>
+          <li>api/tools/ llm.py, chat.py, guard.py <em>the AI connection, the chat loop, the prompt guard</em></li>
           <li>scripts/worker.py, create_staff.py, start.sh</li>
           <li>Dockerfile, compose files, litestream.yml, nginx config</li>
-          <li>frontend/index.html, styles.css, js/ui.js, pages/ login, account, staff-jobs, staff-analytics</li>
-          <li>tests/conftest.py, the platform, queue and content tests</li>
+          <li>frontend/index.html, styles.css, js/ui.js, pages/ login, account, staff-jobs, staff-analytics, assistant</li>
+          <li>tests/conftest.py, the platform, queue, content and web-assistant tests</li>
         </ul></div>
       <div><h3><span class="sw" style="border-color:var(--adapt);background:var(--adapt-tint)"></span>Adapt</h3>
         <ul>
@@ -191,10 +192,11 @@ aside p { margin: 0; }
         <ul>
           <li>api/services/ pricing, rental, order, inventory, notification</li>
           <li>api/router/ bike, rental, order, staff</li>
-          <li>scripts/seed.py, docs/help/, docs/legal/</li>
+          <li>scripts/seed.py, seed_history.py, docs/help/, docs/legal/</li>
           <li>frontend/js/pages/ catalogue, bike, my, staff-board, -inventory, -prices, -orders</li>
           <li>tests/ the shop tests</li>
-          <li>api/tools/ <em>the LLM tools</em></li>
+          <li>api/tools/ assistant_tools.py, demand.py <em>the LLM tools</em></li>
+          <li>scripts/train_demand_model.py, assistant_step*.py <em>the model, the lesson</em></li>
         </ul></div>
     </div>
   </section>
@@ -227,7 +229,7 @@ const N = [
   { id: "help", x: 286, y: 206, w: 60, h: 26, t: "help", chip: 1, ch: "7", s: "present", sw: "stays",
     what: "A help centre at /help: getting started, renting, buying, account and tokens, staff. Linked from every page's footer.", files: ["docs/help/", "api/content/"], swap: "The renderer stays; the articles are rewritten." },
   { id: "analytics", x: 352, y: 206, w: 88, h: 26, t: "analytics", chip: 1, ch: "6", s: "present", sw: "stays",
-    what: "First-party and anonymous: one row per catalogue view, bike view, quote, booking and reservation, with the day only (no cookies, no user id, no IP). A staff page shows per-day counts, top bikes and the quote → booking rate.", files: ["api/services/analytics_service.py", "frontend/js/pages/staff-analytics.js"], swap: "Stays; adapt the event names." },
+    what: "First-party and anonymous: one row per catalogue view, bike view, quote, booking and reservation, with the day only (no cookies, no user id, no IP). A staff page shows per-day counts, top bikes and the quote → booking rate, over up to a year, and how many bookings came through the AI assistant (a channel per event: how, never who).", files: ["api/services/analytics_service.py", "frontend/js/pages/staff-analytics.js"], swap: "Stays; adapt the event names." },
 
   { id: "api", x: 470, y: 140, w: 230, h: 56, t: "API", sub: "FastAPI · docs at /docs", ch: "1", s: "present", sw: "adapt",
     what: "FastAPI, built as a class (BikeShopAPI) with one router per area, the structure of VoltagePredictor. Every endpoint has a stable operation_id for the LLM tools.",
@@ -236,7 +238,7 @@ const N = [
     what: "Username + password give an API key; the key goes in every request. Passwords stored with bcrypt, keys as hashes.",
     files: ["api/middleware/auth_middleware.py", "api/services/auth_service.py", "api/router/auth_router.py"], swap: "Reused as it is." },
   { id: "roles", x: 720, y: 172, w: 210, h: 26, t: "roles", chip: 1, ch: "3", s: "present", sw: "adapt",
-    what: "customer / staff. /staff/* answers 403 to customers. Staff can only be created from the server's command line.",
+    what: "customer / staff. /staff/* answers 403 to customers. Staff accounts come from the seed (admin from ADMIN_PASSWORD) or the server's command line, never from the API.",
     files: ["api/middleware/auth_middleware.py", "scripts/create_staff.py"], swap: "Role names and the staff-only path." },
   { id: "rate", x: 720, y: 204, w: 210, h: 26, t: "rate limit", chip: 1, ch: "3", s: "present", sw: "stays",
     what: "60 calls/minute, 1,000/hour, 5,000/day per user.", files: ["api/middleware/rate_limit_middleware.py", "api/services/rate_limit_service.py"], swap: "Reused as it is." },
@@ -257,10 +259,10 @@ const N = [
     what: "Runs the queued jobs: send_email, and assistant_reply, one answer of the website's AI assistant (one attempt only, so a retry can't book twice). Its own process (its own container on a VM, under Litestream on Azure).", files: ["scripts/worker.py", "api/jobqueue/handlers.py", "api/tools/chat.py"], swap: "The loop stays; the handlers are replaced." },
   { id: "scheduler", x: 210, y: 330, w: 230, h: 50, t: "Scheduler", sub: "inside the worker", ch: "5", s: "present", sw: "adapt",
     what: "The worker also releases reserved sale bikes after 7 days (every 15 minutes) and deletes old analytics once a day. One process, so it runs once and not once per API worker.",
-    files: ["scripts/worker.py", "SPEC.md §5.7"], swap: "The loop, JobRun and the container stay; the job it runs is replaced." },
-  { id: "db", x: 470, y: 330, w: 230, h: 50, t: "Database", sub: "SQLite on a Docker volume", ch: "4", s: "present", sw: "stays",
-    what: "One SQLite file on the bikeshop-data volume. WAL mode, and every write takes the lock first (BEGIN IMMEDIATE), so two customers can't book the same bike.",
-    files: ["api/database.py"], swap: "Reused as it is." },
+    files: ["scripts/worker.py", "SPEC.md §5.7"], swap: "The loop stays; the periodic jobs are replaced." },
+  { id: "db", x: 470, y: 330, w: 230, h: 50, t: "Database", sub: "SQLite · a year of demo history", ch: "4", s: "present", sw: "stays",
+    what: "One SQLite file. On Azure it sits on the container's own disk and Litestream restores it at start; on a VM it is on the bikeshop-data volume. WAL mode, and every write takes the lock first (BEGIN IMMEDIATE), so two customers can't book the same bike. The seed adds bikes, prices and demo accounts; a year of invented rentals, orders and analytics, with patterns to discover, comes on top (SPEC §9.1).",
+    files: ["api/database.py", "scripts/seed.py", "scripts/seed_history.py"], swap: "database.py is reused as it is; the seed and the history are written again." },
   { id: "schema", x: 470, y: 388, w: 230, h: 26, t: "schema · migrations", chip: 1, ch: "4", s: "partial", sw: "replace",
     what: "The schema is in code, and tables are created with create_all. A new column on an existing table is added by a small start-up migration (ADDED_COLUMNS in database.py, e.g. analyticsevent.channel); anything bigger needs a migration tool (Alembic).",
     files: ["api/models/models.py", "api/database.py"], swap: "The user/key/usage tables stay; the shop tables (Bike, RentalRate, Rental, Order) are replaced." },
@@ -290,13 +292,13 @@ const N = [
   { id: "spec", x: 20, y: 640, w: 90, h: 40, t: "Spec", ch: "8", s: "present", sw: "adapt",
     what: "SPEC.md is the contract, written before the code, with Given/When/Then for every build slice.", files: ["SPEC.md", "MAP.md"], swap: "§1–§7 (the domain) are rewritten; §8 inference, §10 deployment and the slice format stay." },
   { id: "claude", x: 120, y: 640, w: 110, h: 40, t: "CLAUDE.md", ch: "8", s: "present", sw: "adapt",
-    what: "Instructions for Claude in the repo: change SPEC.md first, then code and tests; how to run the app; keep this map up to date; the house rules (layers, BEGIN IMMEDIATE, queue for slow work, no innerHTML, copy not import, no personal data to the LLM).", files: ["CLAUDE.md"], swap: "The house rules stay; the description of the app changes." },
+    what: "Instructions for Claude in the repo: change SPEC.md first, then code and tests; how to run the app; keep this map up to date; the house rules (layers, BEGIN IMMEDIATE, queue for slow work, no innerHTML, copy not import, no personal data to the LLM), demo data and the git workflow. The CLAUDE.md at the repository root imports it, so a session started there gets the same rules.", files: ["CLAUDE.md", "../CLAUDE.md"], swap: "The house rules stay; the description of the app changes." },
   { id: "git", x: 250, y: 640, w: 80, h: 40, t: "Git", ch: "2", s: "present", sw: "stays",
     what: "github.com/juliuskooistra/SAI. The earlier use cases are in the history under the tag pre-bikeshop.", files: [], swap: "Reused as it is." },
   { id: "ci", x: 350, y: 640, w: 120, h: 40, t: "CI (tests)", ch: "2", s: "present", sw: "adapt",
     what: "About 175 tests, one group per build slice; GitHub Actions runs them on every push.", files: ["tests/", ".github/workflows/bikeshop.yml"], swap: "conftest.py and the platform tests stay; the shop tests are replaced." },
   { id: "deploy", x: 490, y: 640, w: 100, h: 40, t: "deploy", ch: "2", s: "present", sw: "stays",
-    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
+    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets. One pipeline only: the portal's \"Continuous deployment\" would add a second workflow that fights this one.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
   { id: "dev", x: 610, y: 640, w: 70, h: 40, t: "dev", ch: "2", s: "present", sw: "stays",
     what: "Your laptop: uvicorn serves the API and the website, or Docker; deploy/azure/compose.azurite.yml mimics Azure.", files: ["README.md"], swap: "Reused as it is." },
   { id: "staging", x: 690, y: 640, w: 90, h: 40, t: "staging", ch: "2", s: "present", sw: "stays",
