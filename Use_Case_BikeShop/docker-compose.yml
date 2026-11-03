@@ -1,0 +1,53 @@
+# BikeShop on one machine (SPEC §10).
+#
+#   docker compose up -d --build
+#   docker compose exec api python -m scripts.seed
+#
+# Ports are published on 127.0.0.1 only: nginx on the host is the only way in.
+# Docker's port publishing bypasses ufw, so "8130:8000" without the address
+# would put the bare API on the internet.
+
+services:
+  api:
+    build: .
+    image: bikeshop-api
+    env_file: .env
+    volumes:
+      - bikeshop-data:/app/api/data
+    ports:
+      - "127.0.0.1:8130:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # The scheduled job (SPEC §5.7): same image, its own process, so it runs
+  # once and not once per uvicorn worker.
+  scheduler:
+    image: bikeshop-api
+    command: ["python", "-m", "scripts.scheduler"]
+    env_file: .env
+    volumes:
+      - bikeshop-data:/app/api/data
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    image: bikeshop-frontend
+    environment:
+      BIKESHOP_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:8131:8501"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  bikeshop-data:
