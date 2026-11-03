@@ -18,10 +18,11 @@ through tools built on this API.
 | or: Azure Container Apps | pay per use, scales to zero; a student can deploy it with Azure for Students. SQLite survives through Litestream copying it to Azure Blob Storage (§10.2) |
 
 This file is the contract. Change it first, then the code (spec-first). The
-LLM features are **out of scope** here: we only connect to BFH inference
-and guarantee an API that the colleague can wrap as tools (§8).
+web app itself has no LLM features: it only connects to BFH inference and
+guarantees an API that the colleague can wrap as tools (§8). The colleague's
+assistant tools, built on top of it, are specified in §13.
 
-Status: draft, 2026-11-02.
+Status: draft, 2026-11-02. §13 added 2026-11-03.
 
 Students get the **finished app as a worked example**: they read and run it,
 they don't rebuild it. They can deploy their own copy to Azure (§10.2). The app is **English only** (UI, error messages,
@@ -47,8 +48,9 @@ Students watch; they don't sign in to it.
 
 **Non-goals**
 
-- LLM features, prompts, tool definitions, agent loop (colleague, later).
-  Nothing in the app calls the model except the reachability check.
+- LLM features in the web app (API and website). Nothing in the app calls
+  the model except the reachability check. The assistant tools and their chat
+  loop (§13) run as scripts next to the app, not inside it.
 - Real payments. Rentals and sales are paid at the counter; the app records
   prices only. The **token** billing is for API usage, as in VoltagePredictor,
   and has nothing to do with bike prices (§5.6).
@@ -70,6 +72,7 @@ Use_Case_BikeShop/              (in github.com/juliuskooistra/SAI)
 ├── MIDDLEWARE_ARCHITECTURE.md   the three middlewares, protection matrix
 ├── DEPLOY.md                    ✚ VM from zero to HTTPS, step by step (§10.1)
 ├── DEPLOY-azure.md              ✚ Azure Container Apps for students, step by step (§10.2)
+├── ASSISTANT.md                 ✚ the tool-calling lesson: three steps and experiments (§13.6)
 ├── Dockerfile                   the API image (also carries Litestream)
 ├── litestream.yml               ✚ where Litestream copies the SQLite file (§10.2)
 ├── docker-compose.yml           ✚ api + worker, one volume, port on 127.0.0.1 only
@@ -110,12 +113,18 @@ Use_Case_BikeShop/              (in github.com/juliuskooistra/SAI)
 │   │   ├── rental_service.py    ✚
 │   │   ├── order_service.py     ✚
 │   │   └── inference_service.py ✚ BFH inference client + ping (§8.1)
-│   └── data/                    ✚ SQLite file lives here (Docker volume, gitignored)
+│   ├── tools/                   ✚ the colleague's assistant tools (§13)
+│   │   ├── brankas_great_tools.py  the five tools, their menu, run_tool()
+│   │   ├── demand.py            features, weather and model file for demand_forecast
+│   │   └── llm.py               the connection to the AI: BFH by default, or another provider
+│   └── data/                    ✚ SQLite file and the demand model live here (Docker volume, gitignored)
 ├── scripts/                     ✚ (≙ CreditScorer/scripts)
 │   ├── seed.py                  demo inventory, price list, demo accounts
 │   ├── worker.py                ✚ the worker: runs queued jobs + the reservation expiry (§5.7, §5.8)
 │   ├── start.sh                 ✚ container start: APP_MODE=api (VM) or all (Azure: restore, seed, Litestream, API + worker)
-│   └── create_staff.py          promote/create a staff user
+│   ├── create_staff.py          promote/create a staff user
+│   ├── train_demand_model.py    ✚ made-up walk-in history → demand model (§13.5)
+│   └── assistant_step1/2/3_*.py ✚ the lesson: tools without AI, one request, the chat (§13.6)
 ├── docs/help/, docs/legal/      ✚ markdown for /help and /legal/* (§6)
 ├── tests/                       ✚ pytest
 └── frontend/                    ✚ static site, served by FastAPI under / (replaces front_end/ React app)
@@ -132,7 +141,7 @@ Use_Case_BikeShop/              (in github.com/juliuskooistra/SAI)
 
 | Change | Why |
 |---|---|
-| No `ml_models/`; the services hold business rules instead of a model | There is no ML in a bike shop. |
+| No `ml_models/`; the services hold business rules instead of a model | The shop's rules are exact, so no model makes them. The one model is the assistant's demand forecast (§13.5), trained by a script into `api/data/`. |
 | Four domain routers instead of one | The domain has catalogue, rentals, sales and staff work. |
 | `request.state.role` + a staff check | Two roles (customer, staff). |
 | SQLite in `api/data/` on a Docker volume | In VoltagePredictor `auth_demo.db` sits in the image and is lost on every rebuild: the "data" chapter of the lecture. |
@@ -1365,6 +1374,38 @@ Christmas 2025), `tests/test_s23_history.py`.
 - **Given** the history, **when** staff open `/staff/analytics?days=365`,
   **then** they see a full year.
 
+### S24 Assistant tools (§13)
+Files: `api/tools/*`, `scripts/train_demand_model.py`,
+`scripts/assistant_step1_without_ai.py`, `scripts/assistant_step2_see_the_request.py`,
+`scripts/assistant_step3_chat.py`, `api/config.py`, `.env.example`,
+`requirements.in`, `ASSISTANT.md`, `MAP.md`.
+
+- **Given** two free city bikes, **when** `check_availability` is run for Sat
+  10:00–14:00, **then** both are listed with their price. **When** one is
+  booked, **then** only the other one is listed.
+- **Given** a Sunday, **when** any tool gets that date, **then** it returns
+  `{"error": "The shop is closed on Sundays…"}` and raises nothing.
+- **Given** a city bike, **when** `quote_rental` is run, **then** the total
+  equals `pricing_service.rental_price` for the same period.
+- **Given** customer A, **when** `book_rental` runs for A, **then** the rental
+  belongs to A, and the result contains no user id, username or email.
+  **When** A already has 3 open rentals, **then** the error says so.
+- **Given** the menu, **then** no input of any tool asks for a person (name,
+  email, user), every tool has a description, and the OpenAI-format menu has
+  the same names and inputs.
+- **Given** an unknown tool or wrong inputs, **then** `run_tool` returns an
+  error and raises nothing.
+- **Given** the AI service answers 429, **then** the chat prints the busy
+  message and keeps the conversation (tests use a fake client).
+- **Given** a trained model and a mocked weather service, **when**
+  `demand_forecast` is run for a Saturday, **then** it returns an expected
+  number, a range, a chance and reasons. **Given** every bike of the category
+  booked that day, **then** the chance is 0. **Given** no model file, **then**
+  the error says to run the training script.
+- **Manual**: with `MLMP_API_KEY` set and the seeded database, step 3 answers
+  "Is an e-bike free next Saturday from 10 to 14, and what does it cost?" by
+  calling `check_availability` and giving the price from the tool result.
+
 ## 12. Decisions log
 
 No open questions. Decided 2026-11-02:
@@ -1421,3 +1462,159 @@ No open questions. Decided 2026-11-02:
   Blob Storage. Managed PostgreSQL was considered: it scales out but
   needs locking changes in `database.py`, and it's unclear whether student
   subscriptions may create it. Recorded in MAP.md as the next step.
+- 2026-11-03: the colleague's **assistant tools** (§13, S24). They live in
+  `api/tools/` and call the services in-process; the chat runs as a terminal
+  script, not in the web app, so it needs no `llm_task` job yet. The AI is
+  BFH inference by default; Claude, ChatGPT, Gemini, Mistral, Ollama or any
+  OpenAI-compatible service can be chosen in `.env` for the lesson.
+  `demand_forecast` stays, with a model trained on made-up walk-in history;
+  this replaces the "no ML in a bike shop" rule (§2). No tool takes a
+  person's name: our code, not the AI, decides who the customer is.
+
+---
+
+## 13. Assistant tools (`api/tools/`)
+
+The colleague's part (§8): an AI assistant for customers that answers
+through **tools**, Python functions on top of the services. It is a teaching
+example of tool calling: students read the tools and run three short scripts
+(§13.6). The idea in one line: **the AI decides when to use a tool and with
+which inputs; our code decides what actually happens.** The AI never runs
+anything itself.
+
+### 13.1 The five tools (`brankas_great_tools.py`)
+
+Five tools, one for each kind of tool almost every app needs. Where an
+endpoint does the same, the tool has its `operation_id` as its name (§6).
+
+| kind | tool | inputs | calls | changes data |
+|---|---|---|---|---|
+| look up | `check_availability` | `start_at`, `end_at`, optional `category` | `RentalService.available_bikes` | no |
+| compute | `quote_rental` | `bike_id`, `start_at`, `end_at` | `RentalService.quote` | no |
+| act | `book_rental` | `bike_id`, `start_at`, `end_at` | `RentalService.book` | yes |
+| hand off | `escalate_to_staff` | `reason`, `customer_message` | prints a staff ticket (a real shop would email it) | no |
+| predict | `demand_forecast` | `category`, `date` | the demand model (§13.5) | no |
+
+- **Part 1** of the file are the functions, **part 2** the menu the AI sees:
+  name, description and input schema per tool. The description says what the
+  tool does **and when to use it** (e.g. `book_rental`: "only after the
+  customer has confirmed the summary"; `demand_forecast`: "only when the
+  customer wants to walk in without booking").
+- **Times**: inputs are ISO 8601 without offset, read as Zurich time (§4).
+  Outputs are Zurich time with offset, as in the API.
+- **Errors are returned, not raised**: a `ShopError` or a wrong input becomes
+  `{"error": "<sentence>"}`, with the same sentences as the API (§8.2.2), so
+  the AI can read it and offer something else.
+- **Who the customer is** is fixed by our code: `run_tool(name, inputs, db,
+  user_id)` gets the signed-in customer's id from the chat script, never from
+  the AI. No tool input names a person, and no tool output contains a user
+  id, username or email (§8.2.6).
+- **Middlewares**: the tools call the services directly (§8.2.3), so
+  authentication, rate limiting and token billing don't apply. That is fine
+  for a script the lecturer runs next to the database. If the assistant ever
+  runs for customers over the web, it calls the API with the customer's key
+  instead (§8.2.5).
+
+### 13.2 The connection to the AI (`llm.py`)
+
+| setting (`.env`) | value |
+|---|---|
+| `ASSISTANT_PROVIDER` | `bfh` (default) · `anthropic` · `openai` · `gemini` · `mistral` · `ollama` · `other` |
+| `ASSISTANT_MODEL` | optional; default per provider. For `bfh` it is `MLMP_MODEL` (§8.1) |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY` | only the one for the chosen provider |
+| `ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY` | for `other` (any OpenAI-compatible service) |
+
+- `bfh` uses `InferenceService.get_client()` (§8.1), so no second copy of the
+  MLMP settings. The model must support tool calling; `gpt-oss:120b` does.
+  BFH's embedding, speech and reranker models can't run the assistant.
+- There are two dialects of tool calling: Anthropic's (Claude) and OpenAI's
+  (BFH, ChatGPT, Gemini, Mistral, Ollama). `llm.py` translates both into
+  `reply.text` and `reply.tool_calls`, so the tools and the chat loop are the
+  same for every AI. The menu is written once, in Anthropic format, and
+  rewrapped for OpenAI.
+- The `anthropic` package is imported only when that provider is chosen and
+  is not in the API image; the others use `openai`, which is already there.
+- **429** (BFH allows 30 requests a minute, §8.1): the chat says "The
+  assistant is busy, try again in a minute." and keeps the conversation.
+  An unreachable service, a refused key or an unknown model also get one
+  sentence that says what to check, instead of a traceback.
+- No key is ever printed.
+
+### 13.3 The chat (`scripts/assistant_step3_chat.py`)
+
+- Runs in a terminal: `python -m scripts.assistant_step3_chat --user customer`.
+  The username picks the customer from the database; the AI never sees it.
+- The loop: send the conversation and the menu to the AI; while it asks for
+  tools, run them and send the results back; then show its answer. Every
+  tool call and result is printed as `[TOOL CALL]` / `[RESULT]`.
+- The system prompt holds the shop's name, today's date and time in Zurich,
+  the opening hours (from `config.py`), and the rules: use the tools for
+  availability and prices and never invent numbers; summarise and ask for
+  confirmation before `book_rental`; don't ask for names, emails or other
+  personal data (MLMP rule, §8.2.6).
+- The conversation lives in memory only and is gone when the script ends.
+
+### 13.4 What goes to the AI service
+
+The customer's messages, the menu, and tool results: bikes, prices, times,
+rental ids. No user ids, usernames or emails. With `bfh` it stays at BFH;
+with another provider it goes to that company, which the lesson says.
+
+### 13.5 Demand forecast: the one ML model
+
+The question it answers: "If I don't book and just walk in on that day, will
+a bike of that category be left?"
+
+- **Training (offline, once)**: `python -m scripts.train_demand_model`
+  makes up two years of daily walk-in rentals per category for the days the
+  shop is open, with patterns chosen on purpose (summer busier, Saturdays
+  busier, rain halves demand). It trains a gradient-boosting model for counts
+  (`HistGradientBoostingRegressor`, Poisson loss), prints how far off it is
+  next to a naive average on the last three months, and saves
+  `api/data/demand_model.pkl` and `api/data/rental_history.csv`. **The
+  history is made up**, and the script and `ASSISTANT.md` say so. A real
+  shop would train on its `Rental` table. The year of usage from §9.1 is
+  bookings, not walk-ins, so it isn't used here.
+- **Features**, built by one function used for training and predicting:
+  category (one-hot), weekday, Saturday or not, month, max temperature, rain.
+- **Weather** for Bern from Open-Meteo (free, no key, 5 s timeout). Too far
+  ahead or offline, it uses the typical weather for the month and says so.
+  Only coordinates and a date are sent.
+- **Free bikes** = rental bikes of the category free for the day's opening
+  hours (for today: from the next quarter hour), via `available_bikes`.
+- **Result**: expected walk-in rentals, a likely range (10th–90th
+  percentile, Poisson), the chance that a bike is left, a demand level, advice
+  for the customer, and reasons (season, weekday, weather compared with
+  typical weather for the month). It always says it is an estimate.
+- **Errors**: a closed day, a past date or more than 60 days ahead (§5.2), an
+  unknown category, or no model file ("run `python -m
+  scripts.train_demand_model` first").
+- `scikit-learn` joins `requirements.in`. In Docker the model is trained once
+  with `docker compose exec api python -m scripts.train_demand_model` and
+  stays on the volume.
+
+### 13.6 The lesson (`ASSISTANT.md`)
+
+Adapted from the stand-alone demo "Tool calling with ANY AI":
+
+1. `scripts/assistant_step1_without_ai.py`: run every tool directly, with no
+   AI and no key (needs the seeded database). Books nothing.
+2. `scripts/assistant_step2_see_the_request.py`: one question to the AI;
+   prints the tool request it sends back. Nothing runs.
+3. `scripts/assistant_step3_chat.py`: the full chat (§13.3).
+
+Then experiments: several tools in a row, confirmation before booking, a rule
+says no (Sunday, the 3-rental limit), recovering from an error, hand-off,
+relative dates, another language, a broken tool description, walk-in
+instead of booking, and the same question with two providers.
+
+### 13.7 Non-goals
+
+- A chat widget on the website or an assistant endpoint in the API (later).
+  It would run each answer as an `llm_task` job on the queue (§8.2 point 7),
+  with these tools, and the frontend would poll for the result.
+- Tools for cancelling, sales orders or staff work. Five tools keep the menu
+  readable in one sitting.
+- Storing conversations or staff tickets.
+- A prompt-injection guard. The protection is that the tools enforce every
+  rule and our code, not the AI, decides who the customer is.

@@ -7,6 +7,8 @@ use case after the lecture *From prototype to production*. Live demo:
 - **What it does, and why**: [SPEC.md](SPEC.md), the contract. It was written
   before the code; change it first, then the code.
 - **Where each part sits on the lecture's map**: [MAP.md](MAP.md)
+- **The AI assistant and its tools** (the tool-calling lesson):
+  [ASSISTANT.md](ASSISTANT.md)
 - Middlewares: [MIDDLEWARE_ARCHITECTURE.md](MIDDLEWARE_ARCHITECTURE.md) ·
   Frontend: [FRONTEND.md](FRONTEND.md) · Docker: [BACKEND.md](BACKEND.md) ·
   Server: [DEPLOY.md](DEPLOY.md)

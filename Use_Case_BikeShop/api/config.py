@@ -31,6 +31,11 @@ MLMP_MODEL = os.getenv("MLMP_MODEL", "gpt-oss:120b")
 INFERENCE_CHECK_TTL_SECONDS = 60
 INFERENCE_CHECK_TIMEOUT_SECONDS = 5
 
+# The assistant tools (SPEC §13.2): which AI the chat scripts use.
+# bfh (default) | anthropic | openai | gemini | mistral | ollama | other
+ASSISTANT_PROVIDER = os.getenv("ASSISTANT_PROVIDER", "bfh").strip().lower()
+ASSISTANT_MODEL = os.getenv("ASSISTANT_MODEL", "")
+
 # ---------------------------------------------------------------- shop time
 SHOP_TZ = ZoneInfo("Europe/Zurich")
 
