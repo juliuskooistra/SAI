@@ -1,0 +1,211 @@
+/*
+  BikeShop: the whole look of the site in one small file.
+
+  A few colour variables at the top, then the page frame, then the building
+  blocks the pages use (cards, forms, tables, buttons, messages).
+  Mobile first: everything stacks on a phone and spreads out on wider screens.
+*/
+
+:root {
+  --green: #2f6b4f;        /* the shop colour: buttons, links, header */
+  --green-dark: #22503a;
+  --ink: #1f2522;          /* text */
+  --muted: #5f6b65;        /* secondary text */
+  --line: #d9ded9;         /* borders */
+  --paper: #ffffff;        /* cards */
+  --background: #f5f4ef;   /* page */
+  --warn: #8a5a00;
+  --warn-bg: #fff4dc;
+  --error: #9b2c2c;
+  --error-bg: #fdecec;
+  --ok-bg: #e8f3ec;
+  --focus: #e0a526;        /* keyboard focus ring */
+  --radius: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--background);
+  line-height: 1.45;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* hidden wins over display: flex */
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1; width: 100%; max-width: 980px; margin: 0 auto; padding: 1rem; }
+main:focus { outline: none; }
+h1 { font-size: 1.6rem; margin: 0.5rem 0 1rem; }
+h2 { font-size: 1.2rem; margin: 1.75rem 0 0.6rem; }
+h3 { font-size: 1.05rem; margin: 0 0 0.3rem; }
+a { color: var(--green); }
+
+/* Visible focus for keyboard users, on everything that can be focused. */
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---- header and menu ---------------------------------------------------- */
+.site-header {
+  background: var(--green);
+  color: #fff;
+  padding: 0.6rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+}
+.brand { color: #fff; font-weight: 700; font-size: 1.2rem; text-decoration: none; }
+/* On a phone the menu is its own row that scrolls sideways; wider screens: one row. */
+#menu { display: flex; gap: 0.25rem; order: 3; flex: 1 0 100%; overflow-x: auto; white-space: nowrap; }
+#menu a {
+  color: #fff;
+  text-decoration: none;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius);
+}
+#menu a:hover { background: var(--green-dark); }
+#menu a.active { background: #fff; color: var(--green); }
+#menu .menu-group { opacity: 0.75; font-size: 0.85rem; align-self: center; margin-left: 0.5rem; }
+.user-box { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; margin-left: auto; }
+.user-box button { background: transparent; color: #fff; border-color: #fff; }
+
+.site-footer { color: var(--muted); font-size: 0.85rem; text-align: center; padding: 1.5rem 1rem; }
+.site-footer p { margin: 0.4rem 0 0; }
+.footer-links a { font-weight: 600; }
+
+/* The "waking up" banner (js/api.js shows it after 2 seconds). */
+.waking {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-bottom: 1px solid #e8cf96;
+  text-align: center;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+}
+
+/* ---- messages ------------------------------------------------------------ */
+.message { border-radius: var(--radius); padding: 0.7rem 0.9rem; margin: 0.75rem 0; }
+.message.error { background: var(--error-bg); color: var(--error); }
+.message.success { background: var(--ok-bg); color: var(--green-dark); }
+.message.info { background: #eef1f4; color: #33404d; }
+.message.warning { background: var(--warn-bg); color: var(--warn); }
+.message a { margin-left: 0.4rem; color: inherit; font-weight: 600; }
+.muted { color: var(--muted); }
+.small { font-size: 0.875rem; }
+.loading { color: var(--muted); font-style: italic; }
+
+/* ---- cards and lists --------------------------------------------------- */
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  margin: 0.6rem 0;
+}
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.row .grow { flex: 1 1 16rem; min-width: 0; }
+.price { font-weight: 700; white-space: nowrap; }
+.badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: #eef1ee;
+  color: var(--muted);
+}
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+
+/* Big numbers (balance, counts). */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.6rem; margin: 0.6rem 0; }
+.stat { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.8rem; }
+.stat .label { color: var(--muted); font-size: 0.85rem; }
+.stat .value { font-size: 1.4rem; font-weight: 700; }
+
+/* ---- tabs ------------------------------------------------------------------ */
+.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
+.tabs button {
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+}
+.tabs button[aria-selected="true"] { color: var(--green); border-bottom-color: var(--green); font-weight: 600; }
+
+/* ---- forms ------------------------------------------------------------------ */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.6rem 1rem; align-items: end; }
+.form-grid .wide { grid-column: 1 / -1; }
+label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.9rem; color: var(--muted); }
+input, select, textarea {
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #b9c1bb;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  min-height: 2.5rem;           /* big enough to tap on a phone */
+  width: 100%;
+}
+textarea { min-height: 4.5rem; }
+form.narrow { max-width: 24rem; display: flex; flex-direction: column; gap: 0.7rem; }
+
+/* ---- buttons ---------------------------------------------------------------- */
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--green);
+  background: #fff;
+  color: var(--green);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.95rem;
+  min-height: 2.5rem;
+}
+button:hover { background: #eef5f0; }
+button.primary { background: var(--green); color: #fff; }
+button.primary:hover { background: var(--green-dark); }
+button.danger { border-color: var(--error); color: var(--error); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* A link that looks like a button ("View"). */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.95rem;
+  min-height: 2.5rem;
+  text-decoration: none;
+}
+a.button:hover { background: #eef5f0; }
+.buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* ---- tables ----------------------------------------------------------------- */
+.table-wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.45rem 0.65rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { background: #f0f2ef; font-weight: 600; }
+tbody tr:nth-child(even) { background: #fafbf9; }
+td.num, th.num { text-align: right; }
+td input { min-width: 6.5rem; }
+/* Long text in a table cell (a job's error) wraps instead of widening the table. */
+td .wrap { display: inline-block; white-space: normal; min-width: 14rem; max-width: 28rem; overflow-wrap: anywhere; }
+.error-text { color: var(--error); }
+
+/* ---- bar charts (staff analytics) --------------------------------------------- */
+/* A bar is a <div> whose width is set from the data (style.width, never HTML). */
+.bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 0.25rem 0.6rem; align-items: center; font-size: 0.9rem; }
+.bars .bar-track { background: #eef1ee; border-radius: 4px; height: 0.9rem; }
+.bars .bar { background: var(--green); border-radius: 4px; height: 100%; min-width: 1px; }
+.legend { color: var(--muted); font-size: 0.85rem; margin: 0.3rem 0; }
+
+details { margin: 1rem 0; }
+summary { cursor: pointer; color: var(--green); font-weight: 600; }
+
+@media (min-width: 900px) {
+  #menu { order: 0; flex: 1 1 auto; }
+}
+
+@media (min-width: 700px) {
+  main { padding: 1.5rem 1.25rem; }
+  h1 { font-size: 1.9rem; }
+}

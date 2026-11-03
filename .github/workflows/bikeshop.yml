@@ -1,0 +1,103 @@
+# BikeShop CI/CD (Use_Case_BikeShop/SPEC.md §10.4):
+#   test → build → staging → (approval) → production
+# Pull requests only run the tests. Pushes to main build an image tagged with
+# the commit, deploy it to staging, and after approval the same image to
+# production. Azure login uses GitHub's OIDC token and the managed identity
+# `bikeshop-github`: no password or key is stored in GitHub.
+name: BikeShop
+
+on:
+  push:
+    paths: ["Use_Case_BikeShop/**", ".github/workflows/bikeshop.yml"]
+  pull_request:
+    paths: ["Use_Case_BikeShop/**", ".github/workflows/bikeshop.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bikeshop-${{ github.ref }}
+  cancel-in-progress: false      # never stop a deployment halfway
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Use_Case_BikeShop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3   # there is no floating v10 tag
+      - name: Install Python 3.12 and the pinned dependencies
+        run: |
+          uv venv --python 3.12
+          uv pip sync requirements-dev.txt
+      - name: Run the tests
+        run: .venv/bin/python -m pytest -q
+
+  build:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest           # amd64, like Azure: no cross-building needed
+    permissions:
+      contents: read
+      id-token: write                # to ask GitHub for the OIDC token
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Name the image after the commit
+        id: image
+        run: echo "image=${{ vars.ACR_NAME }}.azurecr.io/bikeshop:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        run: |
+          az acr login --name "${{ vars.ACR_NAME }}"
+          docker build -t "${{ steps.image.outputs.image }}" Use_Case_BikeShop
+          docker push "${{ steps.image.outputs.image }}"
+
+  staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.sai1.airs.iadsf.ch
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy to staging and wait until it's healthy
+        run: bash Use_Case_BikeShop/deploy/azure/release.sh bikeshop-staging "${{ needs.build.outputs.image }}"
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+  production:
+    needs: [build, staging]
+    runs-on: ubuntu-latest
+    environment:
+      name: production               # waits for the lecturer's approval (GitHub environment rule)
+      url: https://demo.sai1.airs.iadsf.ch
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy to production and wait until it's healthy
+        run: bash Use_Case_BikeShop/deploy/azure/release.sh bikeshop "${{ needs.build.outputs.image }}"
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}

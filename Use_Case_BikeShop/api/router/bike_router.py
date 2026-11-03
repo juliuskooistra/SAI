@@ -9,6 +9,7 @@ from ..models.models import (
     BikeDetailResponse, BikeResponse, Category, Condition, FrameSize, OpeningHoursResponse, Purpose,
     RentalRate, RentalRateResponse,
 )
+from ..services import analytics_service
 from ..services.inventory_service import InventoryService
 
 
@@ -50,7 +51,9 @@ class BikeRouter:
         For rentals at a given time, use check_availability instead.
         """
         bikes = self.inventory_service.search_bikes(db, purpose, category, frame_size, max_price_chf, condition, q)
-        return [BikeResponse.model_validate(b) for b in bikes]
+        result = [BikeResponse.model_validate(b) for b in bikes]
+        analytics_service.record(db, "catalogue_view")   # anonymous, never fails the request (SPEC §5.10)
+        return result
 
     def get_bike(self, bike_id: int, db: Session = Depends(get_db)) -> BikeDetailResponse:
         """
@@ -59,10 +62,12 @@ class BikeRouter:
         """
         bike = self.inventory_service.get_bike(db, bike_id)
         rate = db.get(RentalRate, bike.category) if bike.purpose == Purpose.rental else None
-        return BikeDetailResponse(
+        result = BikeDetailResponse(
             **BikeResponse.model_validate(bike).model_dump(),
             rental_rate=RentalRateResponse.model_validate(rate) if rate else None,
         )
+        analytics_service.record(db, "bike_view", bike_id)
+        return result
 
     def list_rental_rates(self, db: Session = Depends(get_db)) -> List[RentalRateResponse]:
         """

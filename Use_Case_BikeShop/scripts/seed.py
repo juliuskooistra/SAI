@@ -2,7 +2,7 @@
 Demo data (SPEC §9): price list, rental fleet, bikes for sale, demo accounts,
 and a few rentals and orders so the staff board isn't empty.
 
-    SEED_STAFF_PASSWORD=... SEED_CUSTOMER_PASSWORD=... python -m scripts.seed
+    SEED_STAFF_PASSWORD=... SEED_CUSTOMER_PASSWORD=... [ADMIN_PASSWORD=...] python -m scripts.seed
 
 Safe to run again: it only adds missing bikes, rates and users. Rentals and
 orders are only seeded into an empty database.
@@ -191,11 +191,18 @@ def main() -> None:
     customer_pw = os.getenv("SEED_CUSTOMER_PASSWORD")
     if not staff_pw or not customer_pw or min(len(staff_pw), len(customer_pw)) < 10:
         raise SystemExit("Set SEED_STAFF_PASSWORD and SEED_CUSTOMER_PASSWORD (at least 10 characters each).")
+    admin_pw = os.getenv("ADMIN_PASSWORD")
+    if admin_pw and len(admin_pw) < 10:
+        raise SystemExit("ADMIN_PASSWORD needs at least 10 characters.")
 
     init_database()
     with Session(engine) as db:
         print("Seeding:")
         ensure_user(db, "staff", "staff@bikeshop.test", staff_pw, Role.staff, DEMO_ACCOUNT_TOKENS)
+        if admin_pw:
+            ensure_user(db, "admin", "admin@bikeshop.test", admin_pw, Role.staff, DEMO_ACCOUNT_TOKENS)
+        else:
+            print("  no admin account (set ADMIN_PASSWORD to create one)")
         customer = ensure_user(db, "customer", "customer@bikeshop.test", customer_pw, Role.customer, DEMO_ACCOUNT_TOKENS)
         lena = ensure_user(db, "lena", "lena@bikeshop.test", secrets.token_urlsafe(24), Role.customer, DEMO_ACCOUNT_TOKENS)
         marco = ensure_user(db, "marco", "marco@bikeshop.test", secrets.token_urlsafe(24), Role.customer, DEMO_ACCOUNT_TOKENS)

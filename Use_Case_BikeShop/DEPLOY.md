@@ -6,8 +6,7 @@ behind that nginx. The demo runs at <https://demo.sai1.airs.iadsf.ch>; replace
 that hostname with yours everywhere below.
 
 ```text
-internet ─443─► nginx (host, certbot) ─┬─ /auth/ /billing/ /api/ /staff/ /docs /openapi.json /health ─► 127.0.0.1:8130 (api)
-                                        └─ everything else ─────────────────────────────────────────► 127.0.0.1:8131 (frontend)
+internet ─443─► nginx (host, certbot) ──► 127.0.0.1:8130 (FastAPI: the API and the website)
 ```
 
 Everything below runs on the VM (`ssh <your-server>`).
@@ -66,7 +65,7 @@ two seed passwords.
 
 ```bash
 sudo docker compose up -d --build
-sudo docker compose ps                        # api "healthy", scheduler and frontend "running"
+sudo docker compose ps                        # api "healthy", worker "running"
 curl -s 127.0.0.1:8130/health                 # "inference": "ok" means the VM reaches MLMP
 sudo docker compose exec api python -m scripts.seed
 ```
@@ -87,13 +86,12 @@ copied but never loaded.
 ## 6. Check
 
 ```bash
-curl -sI https://demo.sai1.airs.iadsf.ch | head -1              # 200, Streamlit
+curl -sI https://demo.sai1.airs.iadsf.ch | head -1              # 200, the website
 curl -s https://demo.sai1.airs.iadsf.ch/health                  # the API
-curl -sI https://demo.sai1.airs.iadsf.ch/staff_board | head -1  # 200: a Streamlit page, not the API
 ```
 
 Also check that the other sites on the VM still answer. From outside, ports
-8130 and 8131 must refuse connections.
+8130 must refuse connections.
 
 ## Updating
 
@@ -119,7 +117,7 @@ sudo docker compose cp api:/app/api/data/bikeshop.db ./bikeshop-$(date +%F).db  
 
 ```bash
 sudo docker compose logs -f api
-sudo docker compose logs -f scheduler
+sudo docker compose logs -f worker   # jobs (emails) and the reservation expiry
 curl -s https://demo.sai1.airs.iadsf.ch/health
 ```
 

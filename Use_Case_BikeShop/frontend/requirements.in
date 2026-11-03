@@ -1,4 +1,0 @@
-# Direct dependencies of the Streamlit frontend.
-# Compile with:  uv pip compile requirements.in -o requirements.txt
-streamlit
-requests

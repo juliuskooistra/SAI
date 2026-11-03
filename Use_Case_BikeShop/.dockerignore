@@ -6,7 +6,7 @@
 api/data
 tests
 .pytest_cache
-frontend
+frontend/.venv
 deploy
 *.md
 .git

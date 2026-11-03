@@ -1,6 +1,9 @@
 # Running the backend with Docker
 
-The API, the scheduler and the frontend run together with Docker Compose.
+The API, the worker and the frontend run together with Docker Compose. The
+worker is a second container from the same image: the API puts background
+jobs (emails) in a queue table, `job_queue`, and the worker runs them, plus
+the reservation expiry every 15 minutes (SPEC §5.7, §5.8).
 The full server set-up is in [DEPLOY.md](DEPLOY.md).
 
 ```bash
@@ -13,9 +16,9 @@ docker compose exec api python -m scripts.seed
 
 ```bash
 docker compose logs -f api          # requests and errors
-docker compose logs -f scheduler    # "expired N orders" every 15 minutes
+docker compose logs -f worker       # jobs run, and "expired N orders" every 15 minutes
 docker compose ps                   # is everything up and healthy?
-curl -s localhost:8130/health       # database, inference, scheduler's last run
+curl -s localhost:8130/health       # database, inference, last expiry run, worker, queue
 ```
 
 ## Running only the API image (as in VoltagePredictor)

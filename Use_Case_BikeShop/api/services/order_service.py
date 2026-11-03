@@ -1,9 +1,10 @@
 """
 Sales: a customer reserves a sale bike, pays and collects it in the shop
-(SPEC §5.5), and the scheduler releases reservations that ran out (§5.7).
+(SPEC §5.5), and the worker releases reservations that ran out (§5.7).
+Each reservation and each expiry queues an email in the same transaction (§5.9).
 
 Every state change is a conditional update ("... WHERE status = 'reserved'"),
-so a customer, a staff member and the scheduler acting at the same moment
+so a customer, a staff member and the worker acting at the same moment
 can't both win: the second one finds nothing to change.
 """
 from datetime import timedelta
@@ -17,6 +18,7 @@ from ..database import start_write_transaction
 from ..models.models import Bike, BikeStatus, Order, OrderStatus, Purpose, User
 from ..timeutils import utcnow, format_local
 from .errors import Conflict, NotFound
+from .notification_service import NotificationService
 
 
 class OrderService:
@@ -52,6 +54,8 @@ class OrderService:
             bike.status = BikeStatus.reserved
             bike.updated_at = now
             db.add(bike)
+            db.flush()
+            NotificationService().bike_reserved(db, order)
             db.commit()
             db.refresh(order)
             return order
@@ -112,15 +116,20 @@ class OrderService:
 
     def expire_reservations(self, db: Session) -> int:
         """
-        The scheduled job (SPEC §5.7): release every reservation past its
-        expires_at. Safe to run twice; returns how many it expired.
+        The scheduled job (SPEC §5.7), run by the worker: release every
+        reservation past its expires_at and queue a "reservation expired"
+        email for each. Safe to run twice; returns how many it expired.
         """
         start_write_transaction(db)
         try:
             now = utcnow()
             due = db.exec(select(Order).where(
                 Order.status == OrderStatus.reserved, Order.expires_at <= now)).all()
-            expired = sum(self._close(db, order, OrderStatus.expired, BikeStatus.available) for order in due)
+            expired = 0
+            for order in due:
+                if self._close(db, order, OrderStatus.expired, BikeStatus.available):
+                    NotificationService().reservation_expired(db, order)
+                    expired += 1
             db.commit()
             return expired
         except Exception:

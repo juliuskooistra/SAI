@@ -152,3 +152,15 @@ def test_seeded_rentals_follow_shop_rules(monkeypatch):
             assert r.created_at <= r.start_at
         for o in db.exec(select(Order)).all():
             assert 9 <= to_local(o.expires_at).hour <= 18
+
+
+def test_seed_creates_admin_only_with_password(client, monkeypatch):
+    monkeypatch.setenv("SEED_STAFF_PASSWORD", "staff-pass-123")
+    monkeypatch.setenv("SEED_CUSTOMER_PASSWORD", "customer-pass-123")
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    seed.main()
+    assert client.post("/auth/login", json={"username": "admin", "password": "admin-pass-123"}).status_code == 401
+    monkeypatch.setenv("ADMIN_PASSWORD", "admin-pass-123")
+    seed.main()
+    r = client.post("/auth/login", json={"username": "admin", "password": "admin-pass-123"})
+    assert r.status_code == 200 and r.json()["role"] == "staff"

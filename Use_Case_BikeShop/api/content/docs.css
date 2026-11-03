@@ -1,0 +1,29 @@
+/* Help and legal pages (SPEC §6). Copied from kooistra-web 0.3.0
+   (kooistra_web/content.py, _CSS), unchanged. Light and dark mode, text
+   at most 72 characters wide, no fonts or images from other sites. */
+:root { color-scheme: light dark; --fg:#1a1a1a; --muted:#666; --bg:#fff;
+  --accent:#2456e0; --border:#e5e5e5; --code-bg:#f5f5f7; }
+@media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#9a9a9a;
+  --bg:#16171a; --accent:#7aa2ff; --border:#2a2c31; --code-bg:#22242a; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+nav.kw { border-bottom:1px solid var(--border); padding:14px 24px; display:flex; gap:20px; }
+nav.kw a { color:var(--muted); text-decoration:none; font-weight:600; font-size:14px; }
+nav.kw a:hover { color:var(--accent); }
+main.doc { max-width:72ch; margin:0 auto; padding:40px 24px 96px; }
+main.doc h1 { font-size:2rem; line-height:1.2; margin:0 0 .6em; }
+main.doc h2 { font-size:1.4rem; margin:2em 0 .5em; padding-top:.3em; border-top:1px solid var(--border); }
+main.doc h3 { font-size:1.1rem; margin:1.6em 0 .4em; }
+main.doc a { color:var(--accent); text-decoration:none; }
+main.doc a:hover { text-decoration:underline; }
+main.doc p, main.doc li { margin:.5em 0; }
+main.doc code { background:var(--code-bg); padding:.15em .4em; border-radius:4px; font-size:.9em; }
+main.doc pre { background:var(--code-bg); padding:16px; border-radius:8px; overflow-x:auto; }
+main.doc pre code { background:none; padding:0; }
+main.doc blockquote { margin:1em 0; padding:.7em 1em; border:1px solid var(--border);
+  color:var(--muted); background:var(--code-bg); border-radius:6px; }
+main.doc table { border-collapse:collapse; width:100%; margin:1em 0; display:block; overflow-x:auto; }
+main.doc th, main.doc td { border:1px solid var(--border); padding:8px 12px; text-align:left; }
+main.doc th { background:var(--code-bg); }
+main.doc hr { border:none; border-top:1px solid var(--border); margin:2em 0; }

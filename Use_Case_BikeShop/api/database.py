@@ -1,7 +1,7 @@
 """
 Database configuration using SQLModel with SQLite.
 
-SQLite runs under 4 uvicorn workers plus the scheduler, so (SPEC §10):
+SQLite runs under 4 uvicorn workers plus the worker, so (SPEC §10):
 - WAL mode lets readers carry on while one process writes;
 - busy_timeout makes a second writer wait up to 5 s instead of failing with
   "database is locked";

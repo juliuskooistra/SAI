@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 from pydantic import Field as PField
-from sqlmodel import SQLModel, Field, Column, Float, Integer, Boolean, String, text
+from sqlmodel import SQLModel, Field, Column, Float, Integer, Boolean, String, text, JSON
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
@@ -244,6 +244,35 @@ class JobRun(SQLModel, table=True):
     last_result: str
 
 
+class Job(SQLModel, table=True):
+    """One unit of background work for the worker (SPEC §4 Job, §5.8)."""
+    __tablename__ = "job_queue"
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = Field(index=True)
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    status: str = Field(default="queued", index=True)       # queued | running | done | failed
+    attempts: int = Field(default=0)                         # also the fencing token
+    max_attempts: int = Field(default=3)
+    run_after: datetime = Field(default_factory=utcnow, index=True)
+    user_id: str | None = Field(default=None, index=True)    # owner; None for system jobs
+    worker_id: str | None = Field(default=None)
+    heartbeat_at: datetime | None = Field(default=None)
+    enqueued_at: datetime = Field(default_factory=utcnow)
+    started_at: datetime | None = Field(default=None)
+    finished_at: datetime | None = Field(default=None)
+    result: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    error: str | None = Field(default=None)
+
+
+class AnalyticsEvent(SQLModel, table=True):
+    """Anonymous product analytics (SPEC §4, §5.10): no user id, no IP, no time of day."""
+    id: int | None = Field(default=None, primary_key=True)
+    day: date = Field(index=True)
+    name: str = Field(index=True)        # catalogue_view | bike_view | quote | booking | reservation
+    bike_id: int | None = Field(default=None, index=True)
+    category: str | None = Field(default=None)
+
+
 ######################### Shop: request/response models #########################
 
 class LocalTimes(BaseModel):
@@ -440,11 +469,19 @@ class JobStatus(LocalTimes):
     last_result: Optional[str] = None
 
 
+class WorkerStatus(LocalTimes):
+    last_seen: Optional[datetime] = PField(default=None, description="When the worker last polled the queue "
+                                                                     "(updated at most every 30 s)")
+
+
 class HealthResponse(LocalTimes):
     status: str = "ok"
     database: str
     inference: str = PField(description="ok | unreachable | unauthorized | model_missing | not_configured")
-    scheduler: JobStatus
+    scheduler: JobStatus = PField(description="Last run of the reservation expiry (run by the worker, SPEC §5.7)")
+    worker: WorkerStatus = PField(default_factory=WorkerStatus)
+    queue: dict[str, int] = PField(default_factory=dict, description="Jobs by status: queued, running, done, failed",
+                                   examples=[{"queued": 0, "running": 0, "done": 12, "failed": 0}])
 
 
 ######################### Default models (from VoltagePredictor) #########################
