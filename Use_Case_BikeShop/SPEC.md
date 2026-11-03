@@ -693,6 +693,12 @@ Nothing here is LLM code.
    worker runs one job at a time, which also keeps MLMP's limit of 2
    concurrent requests. Until a handler exists, `llm_task` jobs fail with
    "No handler for job kind 'llm_task'".
+8. **Data for development**: the deployed database is a SQLite file inside
+   the container, with no port to connect to. Develop against a local copy
+   (`scripts.seed`, then `scripts.seed_history`: the same year of data, §9.1),
+   and test against the deployed app through its API with a staff API key.
+   Nobody writes to the deployed file from outside the app (Litestream
+   expects one writer).
 
 ## 9. Seed data (`scripts/seed.py`)
 
@@ -746,6 +752,11 @@ script, run by hand after the seed: `python -m scripts.seed_history`.
   Quotes, bike views and catalogue views are invented around them. Nothing
   is older than 365 days.
 - **Run once**: if `guest001` exists, the script does nothing.
+- **Into a deployed app**: by hand, inside the running container
+  (`az containerapp exec`, then `python -m scripts.seed_history`), staging
+  first. Not part of `SEED_ON_START`: the dates count from the day it runs,
+  so the lecturer picks that day. Litestream copies the new rows like any
+  other write.
 
 **Planted patterns.** This is the answer key: an analysis, by staff or
 by an agent, should find these. P8 is a red herring.
@@ -989,6 +1000,11 @@ repository root, for every push and pull request that touches
   `az containerapp update --image bikeshop:<earlier hash>`.
 - Manual deploys from a laptop (`DEPLOY-azure.md`) still work, for students
   without the pipeline.
+- **One pipeline only.** The Azure portal's *Continuous deployment* (and
+  `az containerapp github-action add`) is not used: it commits a second
+  workflow that deploys to production on every push, without tests,
+  staging or approval, and stores the login as `<APP>_AZURE_*` secrets
+  that this workflow doesn't read.
 
 ## 11. Build slices and acceptance criteria
 
@@ -1396,6 +1412,10 @@ No open questions. Decided 2026-11-02:
   check whether an analysis finds them. Missing for those agents and left
   for their own slices: costs (purchase price, maintenance), unmet demand
   (a `no_availability` event), price history as a table, parts and suppliers.
+- 2026-11-03: **one deployment pipeline**, ours (§10.4). The portal's
+  *Continuous deployment* was tried and added a second workflow that
+  deployed to production directly and failed (it builds from the repository
+  root, where there is no Dockerfile).
 - 2026-11-03: a second deployment target for students, Azure Container Apps
   (pay per use, Azure for Students), with Litestream keeping SQLite in Azure
   Blob Storage. Managed PostgreSQL was considered: it scales out but

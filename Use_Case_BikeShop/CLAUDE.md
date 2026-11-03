@@ -4,6 +4,9 @@ A teaching app (SAI1): a bike shop that sells and rents bikes. FastAPI +
 SQLite + a static frontend, deployed to Azure Container Apps. Read
 `README.md` for what it is and `MAP.md` for how it maps onto the lecture.
 
+Start Claude in this folder or in the repository root (whose `CLAUDE.md`
+imports this file). Paths and commands here are relative to this folder.
+
 ## The spec comes first
 
 `SPEC.md` is the contract; the code follows it.
@@ -25,7 +28,23 @@ uv venv --python 3.12 && uv pip sync requirements-dev.txt   # once
 .venv/bin/python -m pytest -q                                # all tests
 .venv/bin/uvicorn api.expose_api:app --reload --port 8130    # API + website on http://localhost:8130
 .venv/bin/python -m scripts.worker                           # the worker (queue + reservation expiry)
+
+# Demo data in api/data/bikeshop.db: bikes, accounts, a few rentals ...
+SEED_STAFF_PASSWORD=staff-pass-123 SEED_CUSTOMER_PASSWORD=customer-pass-123 .venv/bin/python -m scripts.seed
+.venv/bin/python -m scripts.seed_history                     # ... then a year of past usage (SPEC §9.1)
 ```
+
+The deployed database can't be reached from outside: develop against this
+local copy, and test against the deployed app through its API (SPEC §8.2).
+
+## Tests
+
+One file per group of build slices: `tests/test_s<N>_….py` tests slice S<N>
+from SPEC §11. `tests/conftest.py` gives every test a fresh database and
+freezes the clock at Monday 2 Nov 2026, 09:00 Zurich. The history's planted
+patterns P1–P8 (SPEC §9.1) are the answer key for the analytics agents, and
+`tests/test_s23_history.py` checks them: if you change the history script,
+those tests must still pass.
 
 Dependencies: declare in `requirements.in`, then
 `uv pip compile requirements.in -o requirements.txt` (and the same for
@@ -49,6 +68,14 @@ Dependencies: declare in `requirements.in`, then
   Zurich time.
 - **Slow or failing work** (email, LLM calls) goes through the job queue
   (`api/jobqueue/`, SPEC §5.8), never inside a request.
+- **LLM features** (chat assistant, management agents) build on SPEC §8:
+  tools live in `api/tools/` and call the services in-process; the model
+  client is `inference_service.get_client()` (BFH MLMP, OpenAI-compatible,
+  2 concurrent requests and 30 per minute); long runs are `llm_task` jobs on
+  the queue. Prompts get bikes, prices and ids, never names, emails or
+  usernames. The agent's tools may only do what its user's role allows:
+  anything that needs a human's approval is a separate staff endpoint the
+  agent can't call.
 - **Frontend**: plain HTML/CSS/JS modules, no framework, no build step,
   nothing from other sites. Only `js/api.js` calls `fetch`. Never put API
   text into `innerHTML`; use `el()`/`textContent`.
@@ -59,9 +86,16 @@ Dependencies: declare in `requirements.in`, then
 - **English only**, for code, UI and docs. The code is read by business
   students: prefer clear and commented over clever.
 
-## Deploying
+## Git and deploying
 
-Normally by merging to `main`: GitHub Actions tests, builds `bikeshop:<commit>`,
-deploys to staging, and after approval to production (`.github/workflows/bikeshop.yml`).
-By hand: `DEPLOY-azure.md`. The apps must stay at max 1 replica (Litestream).
-Costs: `COSTS.md`. A VM: `DEPLOY.md`.
+- Work on a branch and open a pull request: CI runs the tests on it. Don't
+  push to `main` directly: every merge to `main` deploys.
+- Merging to `main`: GitHub Actions tests, builds `bikeshop:<commit>`,
+  deploys to staging, and after the lecturer's approval to production
+  (`.github/workflows/bikeshop.yml`, SPEC §10.4). That is the only
+  pipeline: don't add another deploy workflow, and don't use the Azure
+  portal's *Continuous deployment*.
+- By hand, and setting up the pipeline: `DEPLOY-azure.md` (it also has a
+  table of pipeline errors and their fixes). The apps must stay at max
+  1 replica (Litestream). Costs: `COSTS.md`. A VM: `DEPLOY.md`.
+- Commit messages and docs: say what changed and why, in plain English.

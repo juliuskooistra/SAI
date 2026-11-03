@@ -63,6 +63,15 @@ echo "Your name: $NAME"            # write it down; the steps below use it
 az group create --name $RG --location $LOCATION
 ```
 
+Every later step uses `$RG` and `$NAME`. In a **new terminal** they are
+empty, and `az` answers `argument --resource-group/-g: expected one
+argument`. Set them again:
+
+```bash
+RG=bikeshop-rg
+NAME=$(az acr list --resource-group $RG --query "[0].name" -o tsv)
+```
+
 ## 3. Storage for the database copy
 
 ```bash
@@ -101,7 +110,8 @@ API_KEY_SECRET=$(openssl rand -base64 36)
 ## 6. Start the app
 
 ```bash
-az containerapp env create --name bikeshop-env --resource-group $RG --location $LOCATION
+az containerapp env create --name bikeshop-env --resource-group $RG --location $LOCATION \
+  --environment-mode ConsumptionOnly
 
 az containerapp create --name bikeshop --resource-group $RG --environment bikeshop-env \
   --image $NAME.azurecr.io/bikeshop:1 \
@@ -110,7 +120,7 @@ az containerapp create --name bikeshop --resource-group $RG --environment bikesh
   --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
   --secrets "mlmp-key=${MLMP_KEY:-none}" "api-key-secret=$API_KEY_SECRET" \
             "storage-key=$STORAGE_KEY" "staff-pw=$STAFF_PW" "customer-pw=$CUSTOMER_PW" "admin-pw=$ADMIN_PW" \
-  --env-vars APP_MODE=all SEED_ON_START=1 UVICORN_WORKERS=2 \
+  --env-vars APP_MODE=all SEED_ON_START=1 UVICORN_WORKERS=2 METRICS_ENABLED=0 \
              LITESTREAM_AZURE_ACCOUNT_NAME=$NAME LITESTREAM_AZURE_CONTAINER=litestream \
              LITESTREAM_AZURE_ACCOUNT_KEY=secretref:storage-key \
              MLMP_API_KEY=secretref:mlmp-key API_KEY_SECRET=secretref:api-key-secret \
@@ -122,9 +132,13 @@ curl -s $URL/health
 echo "Open $URL   (API docs: $URL/docs)"
 ```
 
-Pass the registry's username and password as above: the CLI creates an
-"Express" environment, which can't pull with a managed identity, and
-`--registry-server` alone fails with `ExpressEnvironmentFeatureNotSupported`.
+`--environment-mode ConsumptionOnly` makes a classic pay-per-use
+environment. Without it the CLI may create an "Express" one, which can't
+take a custom domain or pull images with a managed identity
+(`ExpressEnvironmentFeatureNotSupported`), see SPEC §10.2. The registry's
+username and password work with both.
+
+`METRICS_ENABLED=0`: on Azure, `/metrics` would be public.
 
 **`--max-replicas 1` matters**: two copies would each restore the database
 and then overwrite each other's copy in Blob Storage.
@@ -163,13 +177,105 @@ For a few seconds the old and the new version run side by side; a booking
 made in exactly those seconds can be lost. Fine for a demo, not for a real
 shop: that's when you move to a managed database (see [MAP.md](MAP.md)).
 
+## A staging copy (needed for the GitHub pipeline)
+
+A second app in the same environment: same image, **its own database**
+(SPEC §10.2). Run it in the shell from steps 2–5 (it needs `$STORAGE_KEY`
+and the passwords):
+
+```bash
+az containerapp create --name bikeshop-staging --resource-group $RG --environment bikeshop-env \
+  --image $NAME.azurecr.io/bikeshop:1 \
+  --registry-server $NAME.azurecr.io --registry-username $NAME --registry-password "$ACR_PW" \
+  --ingress external --target-port 8000 \
+  --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
+  --secrets "mlmp-key=${MLMP_KEY:-none}" "api-key-secret=$(openssl rand -base64 36)" \
+            "storage-key=$STORAGE_KEY" "staff-pw=$STAFF_PW" "customer-pw=$CUSTOMER_PW" "admin-pw=$ADMIN_PW" \
+  --env-vars APP_MODE=all SEED_ON_START=1 UVICORN_WORKERS=2 METRICS_ENABLED=0 \
+             LITESTREAM_PATH=bikeshop-staging \
+             LITESTREAM_AZURE_ACCOUNT_NAME=$NAME LITESTREAM_AZURE_CONTAINER=litestream \
+             LITESTREAM_AZURE_ACCOUNT_KEY=secretref:storage-key \
+             MLMP_API_KEY=secretref:mlmp-key API_KEY_SECRET=secretref:api-key-secret \
+             SEED_STAFF_PASSWORD=secretref:staff-pw SEED_CUSTOMER_PASSWORD=secretref:customer-pw \
+             ADMIN_PASSWORD=secretref:admin-pw
+```
+
+**`LITESTREAM_PATH=bikeshop-staging` matters**: two apps on the same path
+would overwrite each other's database. Staging gets no Mailgun key, so its
+emails only go to the log.
+
+Release by hand: update staging to the new image, check `/health` and a
+booking, then update production to the **same** tag.
+
+## Your own domain (optional)
+
+For example `demo.sai1.airs.iadsf.ch` for `bikeshop`, `staging.sai1.airs.iadsf.ch`
+for `bikeshop-staging`. In your DNS:
+
+| record | value |
+|---|---|
+| `CNAME demo.sai1` | the app's address (`az containerapp show … --query properties.configuration.ingress.fqdn`) |
+| `TXT asuid.demo.sai1` | `az containerapp env show --name bikeshop-env --resource-group $RG --query properties.customDomainConfiguration.customDomainVerificationId -o tsv` |
+| `CAA sai1.airs.iadsf.ch` | `0 issue "digicert.com"`: without it the free certificate stays "Pending" when a parent domain's CAA records don't allow DigiCert (SPEC §10.2) |
+
+Then let Azure issue the certificate:
+
+```bash
+az containerapp hostname add  --name bikeshop --resource-group $RG --hostname demo.sai1.airs.iadsf.ch
+az containerapp hostname bind --name bikeshop --resource-group $RG --hostname demo.sai1.airs.iadsf.ch \
+  --environment bikeshop-env --validation-method CNAME
+```
+
+## A year of past usage (optional)
+
+`scripts/seed_history.py` adds a year of invented customers, rentals, sales
+and analytics, with planted patterns (SPEC §9.1). Run it by hand inside the
+running app, **staging first**. Its dates count from the day you run it, so
+run it close to the demo:
+
+```bash
+curl -s https://$(az containerapp show --name bikeshop-staging --resource-group $RG \
+  --query properties.configuration.ingress.fqdn -o tsv)/health      # wake it up
+az containerapp exec --name bikeshop-staging --resource-group $RG --command sh
+python -m scripts.seed_history       # inside the container; prints "… rentals, … analytics events"
+exit
+```
+
+Wait about 10 seconds before you leave, so Litestream has copied the new rows.
+Running it again prints `history exists, skipped`. Then the same for
+`--name bikeshop`.
+
+## Getting at the data
+
+The database is a SQLite file inside the container: there's no port to
+connect to. To develop against it (SPEC §8.2):
+
+- **A local copy with the same data** (best for development): run
+  `scripts.seed`, then `scripts.seed_history` on your laptop (README).
+- **The deployed app's API**, with a staff API key: `/staff/analytics?days=365`,
+  `/staff/rentals`, and the rest of `/docs`.
+- **A read-only snapshot** of the real data: `litestream restore` from the
+  storage account (needs the storage key). Never write it back.
+
+Don't write to the deployed file from outside the app: Litestream expects
+one writer.
+
 ## Automatic deployment with GitHub Actions (optional)
 
 `.github/workflows/bikeshop.yml` tests every push; on `main` it builds the
 image, deploys it to staging, and after your approval the same image to
 production (SPEC §10.4). It logs in to Azure with GitHub's OIDC token and a
 **managed identity**: no password ends up in GitHub. (BFH accounts can't
-register Azure apps, but they can create managed identities.)
+register Azure apps, but they can create managed identities.) It needs the
+staging app from above.
+
+**Don't use the portal's *Continuous deployment*** (or `az containerapp
+github-action add`) for this. It commits a second workflow that deploys
+straight to production on every push, without tests, staging or approval,
+and it fails anyway, because the Dockerfile isn't in the repository root.
+If it was switched on, delete `.github/workflows/*AutoDeployTrigger*.yml` and
+the `BIKESHOP_*` secrets it created, and turn it off under the app's
+*Continuous deployment* blade.
 
 Once, in Azure: the identity, what it may do, and which GitHub runs may use it.
 These commands grant permissions, so read them before you run them:
@@ -180,13 +286,18 @@ az identity create --name bikeshop-github --resource-group $RG --location $LOCAT
 PID=$(az identity show --name bikeshop-github --resource-group $RG --query principalId -o tsv)
 
 # Which runs may log in: pushes to main, and the two environments
-for pair in "github-main:repo:$REPO:ref:refs/heads/main" \
-            "github-staging:repo:$REPO:environment:staging" \
-            "github-production:repo:$REPO:environment:production"; do
-  az identity federated-credential create --name ${pair%%:*} --identity-name bikeshop-github \
+# Write ${REPO} with braces: in zsh, "$REPO:r…" and "$REPO:e…" are modifiers
+# that silently cut the text (subject "repo:nvironment:staging")
+for pair in "github-main|repo:${REPO}:ref:refs/heads/main" \
+            "github-staging|repo:${REPO}:environment:staging" \
+            "github-production|repo:${REPO}:environment:production"; do
+  az identity federated-credential create --name "${pair%%|*}" --identity-name bikeshop-github \
     --resource-group $RG --issuer https://token.actions.githubusercontent.com \
-    --subject "${pair#*:}" --audiences api://AzureADTokenExchange
+    --subject "${pair#*|}" --audiences api://AzureADTokenExchange
 done
+# Check: each subject must read repo:<user>/<repo>:ref:… or …:environment:…
+az identity federated-credential list --identity-name bikeshop-github --resource-group $RG \
+  --query "[].subject" -o tsv
 
 # What it may do: push images, change the two apps. Nothing else.
 az role assignment create --assignee-object-id $PID --assignee-principal-type ServicePrincipal \
@@ -216,6 +327,17 @@ JSON
 From then on: merge to `main` → tests → image `bikeshop:<commit>` →
 staging → you approve in the Actions tab → production. To roll back, re-run
 the production job of an earlier successful run.
+
+**When the pipeline fails:**
+
+| error in the run | cause | fix |
+|---|---|---|
+| `Unable to resolve action …@vN` | a pinned action version doesn't exist | pin an existing tag (`gh api repos/<owner>/<action>/releases/latest`) |
+| `Not all values are present. Ensure 'client-id' and 'tenant-id' are supplied` | the repository **variables** are missing (secrets with other names don't count) | `gh variable list`; set them as above |
+| `AADSTS700213: No matching federated identity record found for … subject 'repo:…'` | the federated credential's subject differs from the one in the error | compare with `az identity federated-credential list …`; fix with `az identity federated-credential update` |
+| `AuthorizationFailed` in `az acr login` or `az containerapp update` | the role assignment is missing | the `az role assignment create` lines above |
+
+Fix, then `gh run rerun <run id>` (the id is in the run's URL).
 
 ## Logs and status
 

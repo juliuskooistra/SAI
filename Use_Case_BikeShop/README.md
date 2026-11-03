@@ -41,6 +41,13 @@ This creates 35 bikes, the price list, the users `staff` and `customer` (with
 those passwords), and a few rentals and orders. The database file is
 `api/data/bikeshop.db`.
 
+For a year of past usage (customers, rentals, sales and analytics with
+planted patterns to find, SPEC §9.1), run this once afterwards:
+
+```bash
+.venv/bin/python -m scripts.seed_history
+```
+
 # Running the API
 
 ```bash
