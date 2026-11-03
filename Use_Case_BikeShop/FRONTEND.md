@@ -37,6 +37,7 @@ frontend/
 | Bike details | `#/bike/<id>` | everyone signed in |
 | My rentals and orders | `#/my` | everyone signed in |
 | Account | `#/account` | everyone signed in |
+| Assistant (chat with the AI, SPEC §13.8) | `#/assistant` | everyone signed in |
 | Today's board | `#/staff/board` | staff |
 | Inventory | `#/staff/inventory` | staff |
 | Price list | `#/staff/prices` | staff |

@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error
 
-from api.config import DATA_DIR
+from api.config import MODEL_DIR
 from api.models.models import Category
 from api.tools.demand import BERN_CLIMATE, HISTORY_FILE, MODEL_FILE, TYPICAL_RAIN_MM, make_features
 
@@ -96,7 +96,7 @@ def train(rows) -> HistGradientBoostingRegressor:
 
 def main() -> None:
     rows = make_history(date(2024, 11, 1), date(2026, 10, 31))
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
     with open(HISTORY_FILE, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0])
         writer.writeheader()

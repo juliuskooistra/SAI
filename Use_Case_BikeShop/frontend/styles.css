@@ -209,3 +209,15 @@ summary { cursor: pointer; color: var(--green); font-weight: 600; }
   main { padding: 1.5rem 1.25rem; }
   h1 { font-size: 1.9rem; }
 }
+
+/* ---- the assistant's chat (#/assistant) ---- */
+.chat { display: flex; flex-direction: column; gap: 0.6rem; margin: 1rem 0; }
+.bubble { max-width: 75%; padding: 0.6rem 0.8rem; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble.user { align-self: flex-end; background: var(--ok-bg); }
+.bubble.assistant { align-self: flex-start; }
+.bubble .who { font-size: 0.8rem; font-weight: 600; color: var(--muted); margin-bottom: 0.2rem; }
+.bubble .tools { font-size: 0.8rem; color: var(--muted); margin-top: 0.4rem; }
+.bubble.thinking .text { color: var(--muted); font-style: italic; }
+.chat-form textarea { width: 100%; box-sizing: border-box; font: inherit; }
+.chat-form .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }

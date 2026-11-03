@@ -21,10 +21,20 @@ imports this file). Paths and commands here are relative to this folder.
 
 Pure mechanical changes (typos, formatting, comments) skip step 1.
 
+## Keep the map up to date
+
+`MAP.md` (the table) and `map.html` (the interactive diagram) show where each
+part of the app sits on the lecture's map, with its status (✅ 🟡 ⬜), what it
+does and its files. **Every change that adds, finishes or moves a part
+updates both files in the same commit**: the row in `MAP.md`, the matching
+entry in `map.html` (same text, `s: "present" | "partial" | "missing"`), and
+the test count and the stays / adapt / replace lists when they change.
+
 ## Running it
 
 ```bash
 uv venv --python 3.12 && uv pip sync requirements-dev.txt   # once
+set -a; . ./.env; set +a                                     # the app doesn't read .env itself (Docker Compose does)
 .venv/bin/python -m pytest -q                                # all tests
 .venv/bin/uvicorn api.expose_api:app --reload --port 8130    # API + website on http://localhost:8130
 .venv/bin/python -m scripts.worker                           # the worker (queue + reservation expiry)
@@ -75,7 +85,10 @@ Dependencies: declare in `requirements.in`, then
   the queue. Prompts get bikes, prices and ids, never names, emails or
   usernames. The agent's tools may only do what its user's role allows:
   anything that needs a human's approval is a separate staff endpoint the
-  agent can't call.
+  agent can't call. The website's assistant (SPEC §13.8) runs each answer
+  as an `assistant_reply` job and keeps the five prompt-injection layers:
+  don't remove one, and give any new tool that changes data a
+  once-per-message limit in `api/tools/chat.py`.
 - **Frontend**: plain HTML/CSS/JS modules, no framework, no build step,
   nothing from other sites. Only `js/api.js` calls `fetch`. Never put API
   text into `innerHTML`; use `el()`/`textContent`.

@@ -38,6 +38,7 @@ from api.config import (
 from api.database import engine, init_database, start_write_transaction
 from api.jobqueue import queue
 from api.jobqueue.handlers import HANDLERS
+import api.tools.chat  # noqa: F401  registers the assistant_reply handler (SPEC §13.8)
 from api.models.models import AnalyticsEvent, JobRun
 from api.observability import setup_logging
 from api.services.order_service import OrderService

@@ -68,6 +68,9 @@ class BillingMiddleware(BaseHTTPMiddleware):
             if pattern.startswith("="):
                 if path == pattern[1:]:
                     return cost
+            elif pattern.startswith("^"):
+                if path.startswith(pattern[1:]):
+                    return cost
             elif path.endswith(pattern):
                 return cost
         return DEFAULT_TOKEN_COST

@@ -29,6 +29,12 @@ COPY litestream.yml ./litestream.yml
 # The SQLite file lives here, on a Docker volume (docker-compose.yml)
 ENV BIKESHOP_DATA_DIR=/app/api/data
 
+# The assistant's demand model (SPEC §13.5), trained now, into the image.
+# Not in /app/api/data: on a VM the volume is mounted there and would hide it.
+# The training is seeded, so every build gives the same model.
+ENV BIKESHOP_MODEL_DIR=/app/models
+RUN python -m scripts.train_demand_model
+
 # Set environment variable to get logs immediately
 ENV PYTHONUNBUFFERED=1
 

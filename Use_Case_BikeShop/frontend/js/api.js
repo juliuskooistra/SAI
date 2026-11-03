@@ -236,6 +236,10 @@ export const cancelMyRental = (rentalId) => request("POST", `/api/rentals/${rent
 export const reserveBike = (bikeId) => request("POST", "/api/orders", { body: { bike_id: bikeId } });
 export const myOrders = () => request("GET", "/api/orders");
 export const cancelMyOrder = (orderId) => request("POST", `/api/orders/${orderId}/cancel`);
+/** The AI assistant (SPEC §13.8): send the conversation, get { job_id } (or { reply, flagged }). 5 tokens. */
+export const askAssistant = (messages) => request("POST", "/api/assistant/messages", { body: { messages } });
+/** One of your background jobs, e.g. the assistant's answer. Free. */
+export const getJob = (jobId) => request("GET", `/api/jobs/${jobId}`);
 
 // ---- /staff: shop staff only (free) ----------------------------------------------------
 

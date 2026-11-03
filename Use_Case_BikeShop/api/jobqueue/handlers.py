@@ -7,11 +7,10 @@ error and retries the job later.
 
 Registered here: `send_email` (SPEC §5.9).
 
-Deliberately not registered: `llm_task`. That kind is reserved for the
-colleague's LLM tools (SPEC §8.2 point 7): they add a handler with
-`@register("llm_task")` in `api/tools/` and import that module in
-`scripts/worker.py`. Until then, `llm_task` jobs fail at once with
-"No handler for job kind 'llm_task'".
+Registered elsewhere: `assistant_reply`, one answer of the website's AI
+assistant, in `api/tools/chat.py` (SPEC §13.8); `scripts/worker.py` imports
+that module so the handler exists. A kind without a handler fails at once
+with "No handler for job kind '…'".
 """
 from typing import Callable, Optional
 

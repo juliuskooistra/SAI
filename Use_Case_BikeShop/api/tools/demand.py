@@ -10,11 +10,11 @@ from datetime import date
 
 import httpx
 
-from ..config import DATA_DIR
+from ..config import MODEL_DIR
 from ..models.models import Category
 
-MODEL_FILE = DATA_DIR / "demand_model.pkl"        # created by scripts/train_demand_model.py
-HISTORY_FILE = DATA_DIR / "rental_history.csv"    # the made-up history it was trained on
+MODEL_FILE = MODEL_DIR / "demand_model.pkl"       # created by scripts/train_demand_model.py
+HISTORY_FILE = MODEL_DIR / "rental_history.csv"   # the made-up history it was trained on
 
 BERN = {"latitude": 46.95, "longitude": 7.45}
 
