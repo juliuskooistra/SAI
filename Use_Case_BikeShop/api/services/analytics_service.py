@@ -23,6 +23,8 @@ logger = logging.getLogger("bikeshop.analytics")
 
 # The events, in funnel order (SPEC §4).
 EVENTS = ["catalogue_view", "bike_view", "quote", "booking", "reservation"]
+# How an event happened (SPEC §5.10): the API (website, API clients) or the assistant's tools.
+CHANNELS = ["api", "assistant"]
 TOP_BIKES = 10
 
 
@@ -48,6 +50,7 @@ class AnalyticsSummary(BaseModel):
     totals: Dict[str, int]          # event name -> count over the period
     top_bikes: List[TopBike]        # the 10 most-viewed bikes (bike_view), most views first
     quote_to_booking_rate: Optional[float]   # bookings / quotes, None if there were no quotes
+    bookings_by_channel: Dict[str, int]      # "api" / "assistant" -> bookings over the period
 
 
 # ------------------------------------------------------------ recording
@@ -57,15 +60,17 @@ def today() -> date:
     return to_local(utcnow()).date()
 
 
-def record(db: Session, name: str, bike_id: Optional[int] = None) -> None:
+def record(db: Session, name: str, bike_id: Optional[int] = None, channel: str = "api") -> None:
     """
     Store one anonymous event. Call it after the request's own work is done.
-    Never raises (SPEC §5.10): analytics must not break a booking.
+    `channel` says how it happened: "api" (website and API clients) or
+    "assistant" (the assistant's tools). Never raises (SPEC §5.10):
+    analytics must not break a booking.
     """
     try:
         bike = db.get(Bike, bike_id) if bike_id is not None else None
         category = bike.category.value if bike else None
-        db.add(AnalyticsEvent(day=today(), name=name, bike_id=bike_id, category=category))
+        db.add(AnalyticsEvent(day=today(), name=name, bike_id=bike_id, category=category, channel=channel))
         db.commit()
     except Exception:  # noqa: BLE001 - analytics is best effort
         logger.exception("Could not record analytics event %r", name)
@@ -112,6 +117,15 @@ def summary(db: Session, days: int = 30) -> AnalyticsSummary:
         top_bikes.append(TopBike(bike_id=bike_id, code=bike.code if bike else None,
                                  name=bike.name if bike else None, views=count))
 
+    # Bookings per channel: how many came through the assistant.
+    by_channel = {c: 0 for c in CHANNELS}
+    for channel, count in db.exec(
+        select(AnalyticsEvent.channel, func.count())
+        .where(in_period, AnalyticsEvent.name == "booking")
+        .group_by(AnalyticsEvent.channel)
+    ).all():
+        by_channel[channel] = count
+
     quotes, bookings = totals["quote"], totals["booking"]
     return AnalyticsSummary(
         days=days, since=since, until=until,
@@ -119,4 +133,5 @@ def summary(db: Session, days: int = 30) -> AnalyticsSummary:
         totals=totals,
         top_bikes=top_bikes,
         quote_to_booking_rate=round(bookings / quotes, 3) if quotes else None,
+        bookings_by_channel=by_channel,
     )

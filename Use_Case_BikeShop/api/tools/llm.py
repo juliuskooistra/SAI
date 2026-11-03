@@ -2,7 +2,7 @@
 The CONNECTION to the AI (SPEC §13.2). This is the only file that knows which AI you use.
 
 You pick the AI in .env (ASSISTANT_PROVIDER=...); the default is BFH inference.
-Everything else stays the same: the tools in brankas_great_tools.py don't
+Everything else stays the same: the tools in assistant_tools.py don't
 change, and neither does the loop in scripts/assistant_step3_chat.py.
 
 There are only two "dialects" of tool calling out there:

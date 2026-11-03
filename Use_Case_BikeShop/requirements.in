@@ -10,4 +10,3 @@ httpx
 tzdata
 prometheus-client
 markdown              # help and legal pages (api/content/, copied from kooistra-web)
-scikit-learn

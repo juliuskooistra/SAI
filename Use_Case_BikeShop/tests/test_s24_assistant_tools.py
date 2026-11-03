@@ -1,18 +1,19 @@
-"""S13 assistant tools (SPEC §11, §13). No AI and no network: the AI is faked, the weather mocked."""
+"""S24 assistant tools (SPEC §11, §13). No AI and no network: the AI is faked, the weather mocked."""
 import json
 import pickle
 from datetime import date, datetime
+from pathlib import Path
 
 import httpx
 import openai
 import pytest
 from sqlmodel import select
 
-from api.models.models import Rental, User
+from api.models.models import AnalyticsEvent, Rental, User
 from api.services.pricing_service import rental_price
 from api.timeutils import to_utc
 from api.tools import demand
-from api.tools.brankas_great_tools import TOOLS, run_tool
+from api.tools.assistant_tools import TOOLS, run_tool
 from api.tools.llm import BUSY_MESSAGE, AIError, Busy, OpenAIChat, Reply, ToolCall, openai_tools
 from scripts.assistant_step3_chat import chat_turn
 from scripts.train_demand_model import make_history, train
@@ -70,6 +71,21 @@ def test_booking_belongs_to_the_signed_in_customer_and_names_nobody(db, shop, ca
     assert db.get(Rental, r["rental_id"]).user_id == carla
     text = json.dumps(r)
     assert carla not in text and "carla" not in text and "@" not in text
+
+
+def test_quote_and_booking_are_counted_as_assistant(db, shop, carla):
+    bike = shop["bikes"]["r1"]
+    run_tool("quote_rental", {"bike_id": bike.id, **period()}, db, carla)
+    run_tool("book_rental", {"bike_id": bike.id, **period()}, db, carla)
+    got = [(e.name, e.bike_id, e.channel) for e in db.exec(select(AnalyticsEvent)).all()]
+    assert got == [("quote", bike.id, "assistant"), ("booking", bike.id, "assistant")]
+
+
+def test_scikit_learn_is_not_in_the_image():
+    # requirements.txt is what the Docker image installs; the scripts use the dev environment
+    here = Path(__file__).parent.parent
+    assert "scikit-learn" not in (here / "requirements.txt").read_text()
+    assert "scikit-learn==" in (here / "requirements-dev.txt").read_text()
 
 
 def test_booking_limit_comes_back_as_error(db, shop, carla):
