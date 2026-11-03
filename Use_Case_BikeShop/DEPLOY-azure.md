@@ -97,13 +97,14 @@ ACR_PW=$(az acr credential show --name $NAME --query "passwords[0].value" -o tsv
 
 ## 5. Secrets
 
-Typed in, not stored in a file or in your shell history:
+Typed in, not stored in a file or in your shell history. (`printf` + `read -rs`
+works in both zsh, the Mac's shell, and bash; `read -p` is bash only.)
 
 ```bash
-read -s -p "MLMP key (Enter to skip): " MLMP_KEY; echo
-read -s -p "Password for the 'staff' account (10+ chars): " STAFF_PW; echo
-read -s -p "Password for the 'customer' account (10+ chars): " CUSTOMER_PW; echo
-read -s -p "Password for the 'admin' account (10+ chars): " ADMIN_PW; echo
+printf "MLMP key (Enter to skip): "; read -rs MLMP_KEY; echo
+printf "Password for the 'staff' account (10+ chars): "; read -rs STAFF_PW; echo
+printf "Password for the 'customer' account (10+ chars): "; read -rs CUSTOMER_PW; echo
+printf "Password for the 'admin' account (10+ chars): "; read -rs ADMIN_PW; echo
 API_KEY_SECRET=$(openssl rand -base64 36)
 ```
 
@@ -236,6 +237,15 @@ it):
 ```bash
 az containerapp update --name bikeshop --resource-group $RG \
   --set-env-vars SHOP_STAFF_EMAIL=<the shop's address>
+```
+
+The email only leaves the log once the app has a Mailgun key (EU region,
+a sending key for the `mail.kooistra.ch` domain):
+
+```bash
+printf "Mailgun key: "; read -rs MG_KEY; echo
+az containerapp secret set --name bikeshop --resource-group $RG --secrets "mailgun-key=$MG_KEY"
+az containerapp update --name bikeshop --resource-group $RG --set-env-vars MAILGUN_API_KEY=secretref:mailgun-key
 ```
 
 Without `SHOP_STAFF_EMAIL` the assistant has no hand-off tool and tells
