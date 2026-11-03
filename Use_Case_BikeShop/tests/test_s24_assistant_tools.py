@@ -2,7 +2,6 @@
 import json
 import pickle
 from datetime import date, datetime
-from pathlib import Path
 
 import httpx
 import openai
@@ -79,13 +78,6 @@ def test_quote_and_booking_are_counted_as_assistant(db, shop, carla):
     run_tool("book_rental", {"bike_id": bike.id, **period()}, db, carla)
     got = [(e.name, e.bike_id, e.channel) for e in db.exec(select(AnalyticsEvent)).all()]
     assert got == [("quote", bike.id, "assistant"), ("booking", bike.id, "assistant")]
-
-
-def test_scikit_learn_is_not_in_the_image():
-    # requirements.txt is what the Docker image installs; the scripts use the dev environment
-    here = Path(__file__).parent.parent
-    assert "scikit-learn" not in (here / "requirements.txt").read_text()
-    assert "scikit-learn==" in (here / "requirements-dev.txt").read_text()
 
 
 def test_booking_limit_comes_back_as_error(db, shop, carla):

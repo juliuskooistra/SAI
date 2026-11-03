@@ -1422,8 +1422,6 @@ Files: `api/tools/*`, `scripts/train_demand_model.py`,
 - **Given** `book_rental` books a bike, **then** one `booking` event exists
   with that bike and `channel = assistant`; `quote_rental` records a `quote`
   the same way.
-- **Given** `requirements.txt` (the image's dependencies), **then** it has no
-  `scikit-learn`; `requirements-dev.txt` has it.
 - **Manual**: with `MLMP_API_KEY` set and the seeded database, step 3 answers
   "Is an e-bike free next Saturday from 10 to 14, and what does it cost?" by
   calling `check_availability` and giving the price from the tool result.
@@ -1482,8 +1480,7 @@ No open questions. Decided 2026-11-02:
 - 2026-11-03: **review of the assistant tools** (§13). Assistant bookings
   now show in the staff analytics, with a `channel` column so staff see how
   many came through the assistant; that is anonymous (how, not who), so it
-  fits §5.10. `scikit-learn` moved to the development dependencies, since
-  only the scripts use it. The tools file is `assistant_tools.py`, a name
+  fits §5.10. The tools file is `assistant_tools.py`, a name
   students can read as what it is.
 - 2026-11-03: a second deployment target for students, Azure Container Apps
   (pay per use, Azure for Students), with Litestream keeping SQLite in Azure
@@ -1620,11 +1617,9 @@ a bike of that category be left?"
 - **Errors**: a closed day, a past date or more than 60 days ahead (§5.2), an
   unknown category, or no model file ("run `python -m
   scripts.train_demand_model` first").
-- `scikit-learn` joins `requirements-dev.in`, not `requirements.in`: the
-  assistant runs as scripts in the development environment, and the web
-  app never imports it, so the image (and every wake-up from scale to zero)
-  doesn't carry about 145 MB of numpy, scipy and scikit-learn. The model is
-  trained there, into `api/data/`.
+- `scikit-learn` joins `requirements.in`. In Docker the model is trained once
+  with `docker compose exec api python -m scripts.train_demand_model` and
+  stays on the volume.
 
 ### 13.6 The lesson (`ASSISTANT.md`)
 

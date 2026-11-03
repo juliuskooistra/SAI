@@ -1,5 +1,4 @@
-# Development dependencies on top of the API's: tests, and the assistant's scripts.
+# Test dependencies on top of the API's.
 # Compile with:  uv pip compile requirements-dev.in -o requirements-dev.txt
 -r requirements.in
 pytest
-scikit-learn          # the assistant's demand model (SPEC §13.5): scripts only, not in the image
