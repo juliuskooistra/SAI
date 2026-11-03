@@ -17,7 +17,7 @@ from sqlmodel import Session
 
 from api.database import engine, init_database
 from api.timeutils import to_local, utcnow
-from api.tools.brankas_great_tools import run_tool
+from api.tools.assistant_tools import run_tool
 from scripts.assistant_step3_chat import signed_in_customer
 
 today = to_local(utcnow()).date()

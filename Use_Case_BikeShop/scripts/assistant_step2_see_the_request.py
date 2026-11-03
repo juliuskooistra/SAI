@@ -11,7 +11,7 @@ Which AI? Whatever ASSISTANT_PROVIDER says in .env (default: BFH). See api/tools
 """
 import sys
 
-from api.tools.brankas_great_tools import TOOLS, system_prompt
+from api.tools.assistant_tools import TOOLS, system_prompt
 from api.tools.llm import AIError, connect
 
 question = " ".join(sys.argv[1:]) or "Is an e-bike free next Saturday from 10:00 to 14:00?"

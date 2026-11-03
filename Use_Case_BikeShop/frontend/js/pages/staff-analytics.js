@@ -4,7 +4,7 @@
   The API records one event per catalogue search, bike view, quote, booking
   and reservation: only the day, the event and the bike, never who it was
   (SPEC §5.10). This page shows, for the chosen period:
-  - totals per event and the quote → booking rate;
+  - totals per event, the quote → booking rate, and how many bookings came through the assistant;
   - the 10 most-viewed bikes, as bars;
   - a table of the counts per day.
 
@@ -70,10 +70,12 @@ export async function render(view) {
       el("p", { class: "small muted" }, `${fmtDay(data.since)} to ${fmtDay(data.until)} (shop time)`),
       el("div", { class: "stats" },
         EVENTS.map(([name, label]) => stat(label, fmtNumber(data.totals[name] || 0))),
-        stat("Quote → booking", fmtRate(data.quote_to_booking_rate))),
+        stat("Quote → booking", fmtRate(data.quote_to_booking_rate)),
+        stat("Booked via assistant", fmtNumber(data.bookings_by_channel.assistant || 0))),
       el("p", { class: "legend" },
         "Quote → booking: bookings divided by quotes. The bike page asks for a new quote each time "
-        + "the customer changes the times, so a low rate is normal."),
+        + "the customer changes the times, so a low rate is normal. "
+        + "Booked via assistant: bookings made in the AI assistant's chat, included in Bookings."),
 
       el("h2", {}, "Most-viewed bikes"),
       data.top_bikes.length === 0

@@ -12,7 +12,8 @@ from sqlmodel import select
 from api import timeutils
 from api.config import FRONTEND_DIR
 from api.content import mount_content_pages
-from api.models.models import AnalyticsEvent, Purpose
+from api.database import engine, init_database
+from api.models.models import AnalyticsEvent, Purpose, User
 from api.services import analytics_service
 
 from .conftest import NOW, SAT, book, make_bike
@@ -121,8 +122,38 @@ def test_view_quote_book_reserve_create_one_anonymous_event_each(client, db, sho
         ("booking", bike.id, "city", today),
         ("reservation", sale.id, "city", today),
     ]
+    assert {e.channel for e in events(db)} == {"api"}
     # Anonymous by design: the table has no column that could identify anyone.
-    assert set(AnalyticsEvent.model_fields) == {"id", "day", "name", "bike_id", "category"}
+    # `channel` says how something happened (website/API or assistant), not who did it.
+    assert set(AnalyticsEvent.model_fields) == {"id", "day", "name", "bike_id", "category", "channel"}
+
+
+def test_bookings_by_channel_count_the_assistant(client, db, shop):
+    from api.tools.assistant_tools import run_tool
+    carla = db.exec(select(User).where(User.username == "carla")).first().user_id
+    r1, r2 = shop["bikes"]["r1"], shop["bikes"]["r2"]
+    assert book(client, shop["customer"], r1.id, f"{SAT}T10:00", f"{SAT}T15:00").status_code == 200
+    assert run_tool("book_rental", {"bike_id": r2.id, "start_at": f"{SAT}T10:00", "end_at": f"{SAT}T15:00"},
+                    db, carla)["status"] == "booked"
+
+    body = client.get("/staff/analytics", params={"days": 7}, headers=shop["staff"]).json()
+    assert body["bookings_by_channel"] == {"api": 1, "assistant": 1}
+    assert body["totals"]["booking"] == 2
+
+
+def test_init_database_adds_the_channel_column_to_an_old_table(db):
+    # An analytics table from before `channel` existed, with one old event in it
+    with engine.begin() as connection:
+        connection.exec_driver_sql("ALTER TABLE analyticsevent DROP COLUMN channel")
+        connection.exec_driver_sql("INSERT INTO analyticsevent (day, name) VALUES ('2026-10-01', 'catalogue_view')")
+
+    init_database()
+    init_database()   # safe to run again: nothing left to add
+
+    with engine.begin() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(analyticsevent)")}
+        old = connection.exec_driver_sql("SELECT channel FROM analyticsevent").scalar_one()
+    assert "channel" in columns and old == "api"
 
 
 def test_failed_requests_record_nothing(client, db, shop):

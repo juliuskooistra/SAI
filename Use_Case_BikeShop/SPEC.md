@@ -114,7 +114,7 @@ Use_Case_BikeShop/              (in github.com/juliuskooistra/SAI)
 │   │   ├── order_service.py     ✚
 │   │   └── inference_service.py ✚ BFH inference client + ping (§8.1)
 │   ├── tools/                   ✚ the colleague's assistant tools (§13)
-│   │   ├── brankas_great_tools.py  the five tools, their menu, run_tool()
+│   │   ├── assistant_tools.py   the five tools, their menu, run_tool()
 │   │   ├── demand.py            features, weather and model file for demand_forecast
 │   │   └── llm.py               the connection to the AI: BFH by default, or another provider
 │   └── data/                    ✚ SQLite file and the demand model live here (Docker volume, gitignored)
@@ -295,6 +295,12 @@ Anonymous product analytics (§5.10): **no user id, no IP, no time of day**.
 | `name` | str | `catalogue_view`, `bike_view`, `quote`, `booking`, `reservation` |
 | `bike_id` | int \| null | for bike-related events |
 | `category` | str \| null | the bike's category |
+| `channel` | str | how it happened: `api` (the website and other API clients) or `assistant` (the assistant's tools, §13). Default `api`. Says how, never who |
+
+`channel` was added after the table existed. `create_all` only creates
+missing tables, so `init_database()` adds missing columns itself (a small
+migration: `ALTER TABLE … ADD COLUMN … DEFAULT 'api'`), and existing rows
+read as `api`.
 
 ## 5. Business rules
 
@@ -476,10 +482,15 @@ First-party and anonymous, so it fits nDSG without cookies or consent.
   `quote_rental` (`quote`), `book_rental` (`booking`), `reserve_bike`
   (`reservation`). No user id, no IP, only the day. The frontend sends
   nothing extra.
+- The assistant's tools record the same events for what they do
+  (`quote_rental` → `quote`, `book_rental` → `booking`), with
+  `channel = assistant`; the routers record `channel = api`. The
+  conversation itself is never recorded.
 - Recording never breaks a request: an error is logged and ignored.
 - Staff see `GET /staff/analytics?days=30`: counts per day and event (days
   without events included), totals, the 10 most-viewed bikes, and the
-  quote → booking rate = bookings ÷ quotes (`null` without quotes). The bike
+  quote → booking rate = bookings ÷ quotes (`null` without quotes), and the
+  bookings per channel (`bookings_by_channel`, e.g. `{"api": 41, "assistant": 3}`). The bike
   page asks for a fresh quote whenever the times change, so the rate reads
   low; the analytics page says so. `catalogue_view` has no bike and no
   category.
@@ -1292,6 +1303,12 @@ Files: `api/services/analytics_service.py`, the routers named in §5.10,
   request still succeeds.
 - **Given** events older than 365 days, **when** the worker's daily clean-up
   runs, **then** they are gone.
+- **Given** a booking through the API and one through the assistant's
+  `book_rental`, **then** `bookings_by_channel` is `{"api": 1, "assistant": 1}`
+  and the `booking` total is 2.
+- **Given** a database whose `analyticsevent` table has no `channel` column,
+  **when** `init_database()` runs, **then** the column exists and the old
+  rows read as `api`.
 
 ### S18 Logs and metrics
 Files: `api/observability.py`, `api/main.py`, `scripts/worker.py`,
@@ -1402,6 +1419,9 @@ Files: `api/tools/*`, `scripts/train_demand_model.py`,
   number, a range, a chance and reasons. **Given** every bike of the category
   booked that day, **then** the chance is 0. **Given** no model file, **then**
   the error says to run the training script.
+- **Given** `book_rental` books a bike, **then** one `booking` event exists
+  with that bike and `channel = assistant`; `quote_rental` records a `quote`
+  the same way.
 - **Manual**: with `MLMP_API_KEY` set and the seeded database, step 3 answers
   "Is an e-bike free next Saturday from 10 to 14, and what does it cost?" by
   calling `check_availability` and giving the price from the tool result.
@@ -1457,6 +1477,11 @@ No open questions. Decided 2026-11-02:
   *Continuous deployment* was tried and added a second workflow that
   deployed to production directly and failed (it builds from the repository
   root, where there is no Dockerfile).
+- 2026-11-03: **review of the assistant tools** (§13). Assistant bookings
+  now show in the staff analytics, with a `channel` column so staff see how
+  many came through the assistant; that is anonymous (how, not who), so it
+  fits §5.10. The tools file is `assistant_tools.py`, a name
+  students can read as what it is.
 - 2026-11-03: a second deployment target for students, Azure Container Apps
   (pay per use, Azure for Students), with Litestream keeping SQLite in Azure
   Blob Storage. Managed PostgreSQL was considered: it scales out but
@@ -1482,7 +1507,7 @@ example of tool calling: students read the tools and run three short scripts
 which inputs; our code decides what actually happens.** The AI never runs
 anything itself.
 
-### 13.1 The five tools (`brankas_great_tools.py`)
+### 13.1 The five tools (`assistant_tools.py`)
 
 Five tools, one for each kind of tool almost every app needs. Where an
 endpoint does the same, the tool has its `operation_id` as its name (§6).
@@ -1509,6 +1534,9 @@ endpoint does the same, the tool has its `operation_id` as its name (§6).
   user_id)` gets the signed-in customer's id from the chat script, never from
   the AI. No tool input names a person, and no tool output contains a user
   id, username or email (§8.2.6).
+- **Analytics**: `quote_rental` and `book_rental` record the same events
+  as the API, marked `channel = assistant` (§5.10), so the staff analytics
+  count assistant bookings and show how many there are.
 - **Middlewares**: the tools call the services directly (§8.2.3), so
   authentication, rate limiting and token billing don't apply. That is fine
   for a script the lecturer runs next to the database. If the assistant ever

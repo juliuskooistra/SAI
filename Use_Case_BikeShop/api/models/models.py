@@ -271,6 +271,7 @@ class AnalyticsEvent(SQLModel, table=True):
     name: str = Field(index=True)        # catalogue_view | bike_view | quote | booking | reservation
     bike_id: int | None = Field(default=None, index=True)
     category: str | None = Field(default=None)
+    channel: str = Field(default="api")  # api | assistant: how, never who (SPEC §5.10)
 
 
 ######################### Shop: request/response models #########################

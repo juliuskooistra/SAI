@@ -6,7 +6,7 @@ TRAIN the model behind the demand_forecast tool (SPEC §13.5). Run this once.
 A "predict" tool has two halves:
 
   1. TRAINING (this file, offline): learn from past data, save the model to a file.
-  2. PREDICTING (demand_forecast in api/tools/brankas_great_tools.py): load the
+  2. PREDICTING (demand_forecast in api/tools/assistant_tools.py): load the
      file, make one prediction.
 
 We don't have years of walk-in rentals, so we first MAKE UP two years of

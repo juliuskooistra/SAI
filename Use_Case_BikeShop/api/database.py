@@ -81,9 +81,39 @@ def check_database() -> str:
         return f"error: {e.__class__.__name__}"
 
 
+# Columns added after their table already existed in production (SPEC §4).
+# create_all() only creates missing tables, so these are added by hand:
+# table -> [(column, SQL type and default)]. Existing rows get the default.
+ADDED_COLUMNS = {
+    "analyticsevent": [("channel", "VARCHAR NOT NULL DEFAULT 'api'")],
+}
+
+
+def add_missing_columns():
+    """
+    A tiny migration: add the columns in ADDED_COLUMNS where they are missing.
+    Several processes start at once (API workers, the worker), so it takes the
+    write lock first, like a booking: the others wait, then find nothing to do.
+    """
+    with engine.connect() as connection:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            for table, columns in ADDED_COLUMNS.items():
+                existing = {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table})")}
+                for column, definition in columns:
+                    if existing and column not in existing:   # existing is empty if the table doesn't exist
+                        connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                        print(f"  added column {table}.{column}", flush=True)
+            connection.exec_driver_sql("COMMIT")
+        except Exception:
+            connection.exec_driver_sql("ROLLBACK")
+            raise
+
+
 def init_database():
-    """Initialize the database and create tables if they don't exist."""
+    """Initialize the database: create missing tables, then add missing columns."""
     if DATABASE_URL.startswith("sqlite:///"):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
     create_tables()
+    add_missing_columns()
     print("✅ Database initialized successfully!", flush=True)

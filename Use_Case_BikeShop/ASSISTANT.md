@@ -11,7 +11,7 @@ is [SPEC §13](SPEC.md).
 
 | File | What it is |
 |---|---|
-| [api/tools/brankas_great_tools.py](api/tools/brankas_great_tools.py) | **The heart.** Part 1: the five functions, on top of the shop's services. Part 2: their descriptions (the "menu" the AI sees) |
+| [api/tools/assistant_tools.py](api/tools/assistant_tools.py) | **The heart.** Part 1: the five functions, on top of the shop's services. Part 2: their descriptions (the "menu" the AI sees) |
 | [api/tools/llm.py](api/tools/llm.py) | The connection to the AI. Picks BFH, Claude, ChatGPT ... from `.env`, and translates between their formats |
 | [api/tools/demand.py](api/tools/demand.py) | Features, weather and model file for the `demand_forecast` tool |
 | [scripts/train_demand_model.py](scripts/train_demand_model.py) | Trains the machine-learning model behind `demand_forecast` (run once) |
@@ -110,7 +110,7 @@ Follow the [README](README.md): Python environment, `.env`, and the demo data
 - Tool 6 is different: it returns an **estimate** ("about 2 walk-in rentals,
   90% chance a bike is left") plus the **reasons**, not one exact number.
 
-Now open `brankas_great_tools.py` and read **Part 2**. Each tool has a
+Now open `assistant_tools.py` and read **Part 2**. Each tool has a
 `name`, a `description` and an `input_schema` (which inputs, which types,
 which are required). That's all the AI will ever see. The description is
 effectively a small prompt: it says *what* the tool does and *when* to use it.
@@ -186,7 +186,7 @@ Try these in step 3 and watch the `[TOOL CALL]` lines:
 6. **Relative dates:** *"Do you have a cargo bike tomorrow from 9 to 12?"* The
    AI works out the date, because the system prompt contains today's date.
 7. **Another language:** ask in German or French. The tools stay the same.
-8. **Break a description (important!):** in `brankas_great_tools.py`, change
+8. **Break a description (important!):** in `assistant_tools.py`, change
    the description of `quote_rental` to just `"Price tool."` and ask for a
    price again. The AI may now calculate the price itself and get the daily
    cap wrong. **Lesson: the description is part of your product.**

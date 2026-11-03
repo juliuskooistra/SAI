@@ -24,6 +24,7 @@ from sqlmodel import Session
 
 from ..config import HOLIDAYS, MAX_DAYS_AHEAD, MIN_RENTAL_HOURS, OPENING_HOURS, SHOP_TZ, TIME_GRID_MINUTES
 from ..models.models import Bike, Category
+from ..services import analytics_service
 from ..services.errors import RuleViolation, ShopError
 from ..services.rental_service import WEEKDAYS, RentalService
 from ..timeutils import to_local, to_utc, utcnow
@@ -85,6 +86,7 @@ def quote_rental(db: Session, bike_id: int, start_at: str, end_at: str) -> dict:
     """Price for renting one bike (SPEC §5.3). Books nothing."""
     start, end = _time(start_at, "start_at"), _time(end_at, "end_at")
     bike, rate, price = rentals.quote(db, int(bike_id), start, end)
+    analytics_service.record(db, "quote", bike.id, channel="assistant")   # as the API does (SPEC §5.10)
     return {**_bike(bike), "start_at": _local(start), "end_at": _local(end),
             "billable_hours": price.hours, "full_days": price.full_days, "rest_hours": price.rest_hours,
             "hourly_chf": str(rate.hourly_chf), "daily_chf": str(rate.daily_chf),
@@ -98,6 +100,7 @@ def quote_rental(db: Session, bike_id: int, start_at: str, end_at: str) -> dict:
 def book_rental(db: Session, user_id: str, bike_id: int, start_at: str, end_at: str) -> dict:
     """Book a bike for the signed-in customer. The service checks every rule BEFORE writing."""
     rental = rentals.book(db, user_id, int(bike_id), _time(start_at, "start_at"), _time(end_at, "end_at"))
+    analytics_service.record(db, "booking", rental.bike_id, channel="assistant")   # anonymous: no user id
     return {"status": "booked", "rental_id": rental.id, **_bike(db.get(Bike, rental.bike_id)),
             "start_at": _local(rental.start_at), "end_at": _local(rental.end_at),
             "quoted_price_chf": str(rental.quoted_price_chf),

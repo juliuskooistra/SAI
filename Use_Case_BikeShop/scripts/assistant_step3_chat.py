@@ -19,7 +19,7 @@ from sqlmodel import Session, select
 
 from api.database import engine, init_database
 from api.models.models import User
-from api.tools.brankas_great_tools import TOOLS, run_tool, system_prompt
+from api.tools.assistant_tools import TOOLS, run_tool, system_prompt
 from api.tools.llm import AIError, connect
 
 
