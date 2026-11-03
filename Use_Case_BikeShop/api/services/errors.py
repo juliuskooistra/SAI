@@ -38,3 +38,8 @@ class Conflict(ShopError):
 class InvalidInput(ShopError):
     """Input is well-formed but makes no sense, e.g. daily > 24 x hourly (422)."""
     status_code = 422
+
+
+class Unavailable(ShopError):
+    """A service the request needs isn't set up or reachable, e.g. the AI (503)."""
+    status_code = 503

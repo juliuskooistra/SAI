@@ -20,6 +20,7 @@ import * as cataloguePage from "./pages/catalogue.js";
 import * as bikePage from "./pages/bike.js";
 import * as myPage from "./pages/my.js";
 import * as accountPage from "./pages/account.js";
+import * as assistantPage from "./pages/assistant.js";
 import * as boardPage from "./pages/staff-board.js";
 import * as inventoryPage from "./pages/staff-inventory.js";
 import * as pricesPage from "./pages/staff-prices.js";
@@ -32,6 +33,7 @@ const ROUTES = [
   { path: "catalogue", title: "Catalogue", page: cataloguePage, menu: true },
   { path: "bike", title: "Bike", page: bikePage },              // #/bike/<id>
   { path: "my", title: "My rentals and orders", page: myPage, menu: true },
+  { path: "assistant", title: "Assistant", page: assistantPage, menu: true },
   { path: "account", title: "Account", page: accountPage, menu: true },
   { path: "staff/board", title: "Today's board", page: boardPage, menu: true, staff: true },
   { path: "staff/inventory", title: "Inventory", page: inventoryPage, menu: true, staff: true },

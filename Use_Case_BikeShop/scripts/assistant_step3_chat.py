@@ -13,14 +13,14 @@ Which AI? Whatever ASSISTANT_PROVIDER says in .env (default: BFH). This loop is 
 --user picks the signed-in customer from the database. The AI never sees who it is.
 """
 import argparse
-import json
 
 from sqlmodel import Session, select
 
 from api.database import engine, init_database
 from api.models.models import User
-from api.tools.assistant_tools import TOOLS, run_tool, system_prompt
-from api.tools.llm import AIError, connect
+from api.tools.assistant_tools import TOOLS, system_prompt
+from api.tools.chat import chat_turn   # the loop itself: one turn, also used by the website
+from api.tools.llm import connect
 
 
 def signed_in_customer(db: Session, username: str) -> str:
@@ -29,33 +29,6 @@ def signed_in_customer(db: Session, username: str) -> str:
     if not user:
         raise SystemExit(f"No user '{username}'. Seed the database first: python -m scripts.seed")
     return user.user_id
-
-
-def chat_turn(ai, messages: list, db: Session, user_id: str, show=print) -> str:
-    """One customer message -> tools as often as the AI asks -> the answer.
-    `messages` is the whole conversation; the AI has no memory, we resend it each time."""
-    try:
-        reply = ai.ask(messages)
-
-        # As long as the AI asks for tools, run them and send the results back.
-        while reply.tool_calls:
-            messages += ai.assistant_message(reply)
-
-            results = []
-            for call in reply.tool_calls:
-                show(f"   [TOOL CALL] {call.name}({json.dumps(call.input)})")
-                result = run_tool(call.name, call.input, db, user_id)   # <- OUR code runs here
-                show(f"   [RESULT]    {json.dumps(result, default=str)}")
-                results.append(result)
-
-            messages += ai.tool_result_messages(reply.tool_calls, results)  # matched by id
-            reply = ai.ask(messages)
-    except AIError as e:  # busy, unreachable, wrong key: keep the conversation, try again
-        return str(e)
-
-    # The AI is done with tools: its answer.
-    messages += ai.assistant_message(reply)
-    return reply.text
 
 
 def main() -> None:

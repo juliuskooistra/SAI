@@ -14,6 +14,9 @@ from zoneinfo import ZoneInfo
 # ---------------------------------------------------------------- deployment
 DATA_DIR = Path(os.getenv("BIKESHOP_DATA_DIR", Path(__file__).parent / "data"))
 DATABASE_URL = os.getenv("BIKESHOP_DATABASE_URL", f"sqlite:///{DATA_DIR / 'bikeshop.db'}")
+# The assistant's demand model (SPEC §13.5). The Docker image trains it into
+# /app/models, outside the data volume; locally it sits next to the database.
+MODEL_DIR = Path(os.getenv("BIKESHOP_MODEL_DIR", DATA_DIR))
 
 # The static frontend (SPEC §7), served by FastAPI under /
 FRONTEND_DIR = Path(os.getenv("BIKESHOP_FRONTEND_DIR", Path(__file__).parent.parent / "frontend"))
@@ -101,6 +104,9 @@ MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN", "mail.kooistra.ch")
 MAILGUN_BASE_URL = os.getenv("MAILGUN_BASE_URL", "https://api.eu.mailgun.net/v3")
 MAIL_FROM = os.getenv("MAIL_FROM", "BikeShop <bikeshop@mail.kooistra.ch>")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8130")   # links in emails
+# Where the website's assistant sends hand-offs to staff (SPEC §13.8).
+# Empty: the website's assistant has no escalate_to_staff tool.
+SHOP_STAFF_EMAIL = os.getenv("SHOP_STAFF_EMAIL", "").strip()
 
 # ---------------------------------------------------------------- analytics (SPEC §5.10)
 ANALYTICS_KEEP_DAYS = 365
@@ -121,11 +127,13 @@ RATE_LIMIT_PER_HOUR = 1_000
 RATE_LIMIT_PER_DAY = 5_000
 
 # Token cost per billable call (SPEC §5.6). Checked in order; first match wins.
-# (method, path suffix or exact path, cost)
+# (method, path suffix, "=exact path" or "^path prefix", cost)
 TOKEN_COST_RULES: list[tuple[str, str, float]] = [
     ("POST", "/cancel", 0.0),          # any cancel is free
     ("POST", "=/api/rentals", 5.0),    # "=" means exact path
     ("POST", "=/api/orders", 5.0),
+    ("POST", "=/api/assistant/messages", 5.0),   # one AI answer (SPEC §13.8)
+    ("GET", "^/api/jobs/", 0.0),                 # "^" means "starts with": polling for an answer is free
 ]
 DEFAULT_TOKEN_COST = 1.0
 

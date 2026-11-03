@@ -226,6 +226,22 @@ az containerapp hostname bind --name bikeshop --resource-group $RG --hostname de
   --environment bikeshop-env --validation-method CNAME
 ```
 
+## The AI assistant on the website
+
+The *Assistant* page (SPEC §13.8) needs the MLMP key from step 5; without it
+the page says "The assistant is not available right now." Its hand-off to
+staff emails one address. Set it on an app that already runs (this restarts
+it):
+
+```bash
+az containerapp update --name bikeshop --resource-group $RG \
+  --set-env-vars SHOP_STAFF_EMAIL=<the shop's address>
+```
+
+Without `SHOP_STAFF_EMAIL` the assistant has no hand-off tool and tells
+customers to contact the shop. On staging (no Mailgun key) the email only
+goes to the log.
+
 ## A year of past usage (optional)
 
 `scripts/seed_history.py` adds a year of invented customers, rentals, sales
