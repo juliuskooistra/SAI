@@ -52,7 +52,7 @@ balance is too low. It charges only after a 2xx response and writes one
 | **Fix:** `/auth/my-keys` and `/auth/revoke-key` need the caller's key and act on the caller's own keys | The reference listed the keys of any `user_id` sent in the request body, without authentication, and `revoke-key` always answered 501. |
 | **Fix:** `my-keys` fills the response's `name` field | The reference set `api_key_name` and crashed. |
 | Errors are built with `JSONResponse` | The reference built JSON by hand with f-strings, which breaks on quotes in messages. |
-| Rate limits 60/1,000/5,000 instead of 10/100/1,000 | Clicking around the Streamlit demo makes more than 10 calls a minute. |
+| Rate limits 60/1,000/5,000 instead of 10/100/1,000 | Clicking around the frontend demo makes more than 10 calls a minute. |
 | Times are timezone-aware UTC | SQLModel 0.0.48 rejects naive datetimes, so `datetime.utcnow()` from the reference no longer works. |
 
 Services raise `ShopError` subclasses (`services/errors.py`) instead of

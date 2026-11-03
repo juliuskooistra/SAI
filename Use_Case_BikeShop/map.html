@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BikeShop on the Production Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  /* Layout idea: the lecture's map as one wide diagram, a detail panel beside it, the swap split below. */
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --ink: #1b2531;
+  --muted: #5a6776;
+  --line: #b9c3ce;
+  --accent: #2f5d8a;
+
+  --ok: #2c7a4f;      --ok-tint: #e1f1e7;
+  --part: #a8701a;    --part-tint: #fbefd8;
+  --none: #8d98a5;    --none-tint: transparent;
+  --stay: #2f5d8a;    --stay-tint: #e0eaf4;
+  --adapt: #a8701a;   --adapt-tint: #fbefd8;
+  --repl: #a8385a;    --repl-tint: #f6dfe6;
+
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121820; --panel: #1a222c; --ink: #e4e9ef; --muted: #9aa7b5; --line: #3d4a58; --accent: #7fb0de;
+    --ok: #6cc596; --ok-tint: #17352a; --part: #e0aa55; --part-tint: #3a2d14; --none: #7d8995;
+    --stay: #7fb0de; --stay-tint: #1b3048; --adapt: #e0aa55; --adapt-tint: #3a2d14; --repl: #e58aa6; --repl-tint: #3d1d28;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121820; --panel: #1a222c; --ink: #e4e9ef; --muted: #9aa7b5; --line: #3d4a58; --accent: #7fb0de;
+  --ok: #6cc596; --ok-tint: #17352a; --part: #e0aa55; --part-tint: #3a2d14; --none: #7d8995;
+  --stay: #7fb0de; --stay-tint: #1b3048; --adapt: #e0aa55; --adapt-tint: #3a2d14; --repl: #e58aa6; --repl-tint: #3d1d28;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 24px 20px 40px; display: grid; gap: 20px; }
+
+header { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: end; justify-content: space-between; }
+h1 { font-size: 26px; line-height: 1.2; margin: 0 0 4px; text-wrap: balance; font-weight: 700; }
+.lede { margin: 0; color: var(--muted); max-width: 70ch; }
+
+.switch { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.switch button { font: 600 14px var(--font-body); color: var(--muted); background: none; border: 0; padding: 9px 16px; cursor: pointer; }
+.switch button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+.switch button:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 12px; border-radius: 3px; border: 2px solid; display: inline-block; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+@media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
+
+.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; }
+.diagram figure { margin: 0; min-width: 820px; }
+.diagram svg { width: 100%; height: auto; display: block; }
+figcaption { font-size: 13px; color: var(--muted); padding: 6px 4px 0; }
+
+svg text { font-family: var(--font-body); fill: var(--ink); }
+svg .sub { fill: var(--muted); font-size: 11px; }
+svg .frame { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 5; }
+svg .framelabel { font-size: 12px; font-weight: 600; fill: var(--muted); letter-spacing: .04em; }
+svg .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+svg .edgelabel { font-size: 10.5px; fill: var(--muted); }
+svg .lane { font-size: 11px; font-weight: 600; fill: var(--muted); letter-spacing: .06em; }
+
+.node { cursor: pointer; }
+.node rect { stroke-width: 2; rx: 7; }
+.node:focus { outline: none; }
+.node:focus-visible rect, .node.sel rect { stroke-width: 3.5; }
+.node.sel rect { filter: drop-shadow(0 0 0 var(--accent)); }
+.node text { pointer-events: none; }
+.node .t { font-size: 13px; font-weight: 600; }
+.node.chip .t { font-size: 11.5px; font-weight: 500; }
+
+/* status view */
+.status .s-present rect { fill: var(--ok-tint); stroke: var(--ok); }
+.status .s-partial rect { fill: var(--part-tint); stroke: var(--part); }
+.status .s-missing rect { fill: var(--none-tint); stroke: var(--none); stroke-dasharray: 5 4; }
+.status .s-missing .t { fill: var(--muted); }
+/* swap view */
+.swap .w-stays rect { fill: var(--stay-tint); stroke: var(--stay); }
+.swap .w-adapt rect { fill: var(--adapt-tint); stroke: var(--adapt); }
+.swap .w-replace rect { fill: var(--repl-tint); stroke: var(--repl); }
+.swap .w-none rect { fill: none; stroke: var(--none); stroke-dasharray: 5 4; opacity: .55; }
+.swap .w-none .t { fill: var(--muted); opacity: .7; }
+
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 20px; position: sticky; top: 16px; }
+aside .chapter { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; margin: 0; }
+aside h2 { font-size: 20px; margin: 2px 0 12px; text-wrap: balance; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.pill { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1.5px solid; }
+.p-present { color: var(--ok); border-color: var(--ok); background: var(--ok-tint); }
+.p-partial { color: var(--part); border-color: var(--part); background: var(--part-tint); }
+.p-missing { color: var(--muted); border-color: var(--none); border-style: dashed; }
+.p-stays { color: var(--stay); border-color: var(--stay); background: var(--stay-tint); }
+.p-adapt { color: var(--adapt); border-color: var(--adapt); background: var(--adapt-tint); }
+.p-replace { color: var(--repl); border-color: var(--repl); background: var(--repl-tint); }
+.p-none { color: var(--muted); border-color: var(--none); border-style: dashed; }
+aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 4px; }
+aside p { margin: 0; }
+.files { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.files li { font: 12.5px var(--font-mono); color: var(--ink); background: var(--bg); border-radius: 5px; padding: 3px 7px; overflow-wrap: anywhere; }
+.hint { font-size: 12.5px; color: var(--muted); margin-top: 16px; }
+
+.split { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px 20px; display: grid; gap: 14px; }
+.split h2 { font-size: 18px; margin: 0; }
+.split p.lede { font-size: 14px; }
+.bar { display: flex; height: 34px; border-radius: 7px; overflow: hidden; font-size: 13px; font-weight: 600; }
+.bar div { display: flex; align-items: center; justify-content: center; color: #fff; font-variant-numeric: tabular-nums; }
+.bar .b-stay { background: var(--stay); } .bar .b-adapt { background: var(--adapt); } .bar .b-repl { background: var(--repl); }
+:root[data-theme="dark"] .bar div { color: var(--bg); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bar div { color: var(--bg); } }
+.cols { display: grid; grid-template-columns: 5fr 2fr 4fr; gap: 16px; }
+@media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+.cols h3 { font-size: 14px; margin: 0 0 6px; display: flex; gap: 8px; align-items: center; }
+.cols ul { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 3px; }
+.cols li { font: 12.5px var(--font-mono); overflow-wrap: anywhere; }
+.cols li em { font-family: var(--font-body); font-style: normal; color: var(--muted); }
+
+@media (prefers-reduced-motion: no-preference) { .node rect { transition: fill .2s, stroke .2s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>BikeShop on the production map</h1>
+      <p class="lede">The final map from <i>From prototype to production</i>, filled in with the SAI1 BikeShop use case. Click a box to see the files behind it. Switch the view to see what you keep when you swap the bike shop for another use case.</p>
+    </div>
+    <div style="display:grid; gap:10px; justify-items:end">
+      <div class="switch" role="group" aria-label="Colour the map by">
+        <button type="button" id="btn-status" aria-pressed="true">What BikeShop has</button>
+        <button type="button" id="btn-swap" aria-pressed="false">Swap the use case</button>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="diagram">
+      <figure>
+        <svg id="map" class="status" viewBox="0 0 1130 700" role="img" aria-label="The production map: browser, DNS and reverse proxy in front of the frontend and API on one server, with backend, database, scheduler and monitoring behind them, external providers below, and the delivery lane from spec to production at the bottom. Each box is coloured by whether BikeShop has it."></svg>
+        <figcaption id="caption">Coloured by what BikeShop has. Dashed boxes are on the lecture's map but left out of this app.</figcaption>
+      </figure>
+    </div>
+    <aside id="panel" aria-live="polite"></aside>
+  </div>
+
+  <section class="split" aria-labelledby="split-h">
+    <h2 id="split-h">Swapping the use case, by lines of code</h2>
+    <p class="lede">Replace the bike shop with, say, a library that lends books or a gym that books classes. Write the new SPEC §1–§7 first, then replace the right-hand column.</p>
+    <div class="bar" role="img" aria-label="About 50 percent stays, 15 percent is adapted, 35 percent is replaced">
+      <div class="b-stay" style="flex:50">stays · ~50%</div><div class="b-adapt" style="flex:15">adapt · ~15%</div><div class="b-repl" style="flex:35">replace · ~35%</div>
+    </div>
+    <div class="cols">
+      <div><h3><span class="sw" style="border-color:var(--stay);background:var(--stay-tint)"></span>Stays</h3>
+        <ul>
+          <li>api/database.py, timeutils.py, expose_api.py, observability.py</li>
+          <li>api/middleware/* <em>auth, rate limit, billing</em></li>
+          <li>api/jobqueue/queue.py, api/mail/, api/content/</li>
+          <li>api/services/ auth, billing, rate_limit, inference, analytics, errors</li>
+          <li>api/router/ auth, billing, job</li>
+          <li>scripts/worker.py, create_staff.py, start.sh</li>
+          <li>Dockerfile, compose files, litestream.yml, nginx config</li>
+          <li>frontend/index.html, styles.css, js/ui.js, pages/ login, account, staff-jobs, staff-analytics</li>
+          <li>tests/conftest.py, the platform, queue and content tests</li>
+        </ul></div>
+      <div><h3><span class="sw" style="border-color:var(--adapt);background:var(--adapt-tint)"></span>Adapt</h3>
+        <ul>
+          <li>api/main.py <em>which routers</em></li>
+          <li>api/config.py <em>rules, token costs</em></li>
+          <li>api/models/models.py <em>shop tables go</em></li>
+          <li>api/jobqueue/handlers.py <em>which jobs</em></li>
+          <li>frontend/js/api.js <em>shop calls go</em></li>
+          <li>frontend/js/app.js <em>routes, menu</em></li>
+        </ul></div>
+      <div><h3><span class="sw" style="border-color:var(--repl);background:var(--repl-tint)"></span>Replace</h3>
+        <ul>
+          <li>api/services/ pricing, rental, order, inventory, notification</li>
+          <li>api/router/ bike, rental, order, staff</li>
+          <li>scripts/seed.py, docs/help/, docs/legal/</li>
+          <li>frontend/js/pages/ catalogue, bike, my, staff-board, -inventory, -prices, -orders</li>
+          <li>tests/ the shop tests</li>
+          <li>api/tools/ <em>the LLM tools</em></li>
+        </ul></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const STATUS = { present: "In BikeShop", partial: "Partly", missing: "Not in BikeShop" };
+const SWAP = { stays: "Stays", adapt: "Adapt", replace: "Replace", none: "Not in the app" };
+
+// x, y, w (width), h on a 10px grid; s = status, sw = swap
+const N = [
+  // left column
+  { id: "user", x: 20, y: 120, w: 140, h: 50, t: "User", sub: "customer · staff", ch: "1", s: "present", sw: "adapt",
+    what: "Two user types: customers book and buy, staff run the shop.", files: ["SPEC.md §3"], swap: "The role names change with the use case (e.g. member · librarian)." },
+  { id: "browser", x: 20, y: 200, w: 140, h: 50, t: "Browser", sub: "laptop · phone", ch: "1", s: "present", sw: "stays",
+    what: "Any browser. The hook of the lecture: the link has to open on a phone.", files: [], swap: "Nothing to change." },
+  { id: "dns", x: 20, y: 280, w: 140, h: 50, t: "DNS", sub: "demo.sai1.airs.iadsf.ch", ch: "2", s: "present", sw: "adapt",
+    what: "demo.sai1.airs.iadsf.ch is a CNAME to the Azure app; a TXT record proves the domain is ours.", files: ["SPEC.md §10.2", "DEPLOY-azure.md"], swap: "A new hostname for the new app." },
+
+  // server
+  { id: "proxy", x: 210, y: 70, w: 720, h: 44, t: "Reverse proxy + HTTPS", sub: "Azure ingress + managed certificate · nginx + certbot on a VM", ch: "2", s: "present", sw: "adapt",
+    what: "On Azure the platform's ingress terminates HTTPS with a free managed certificate and passes everything to FastAPI, which serves the API and the website. On a VM, nginx + certbot do the same.",
+    files: ["DEPLOY-azure.md", "deploy/nginx/demo.sai1.airs.iadsf.ch.conf"], swap: "A new hostname." },
+  { id: "frontend", x: 210, y: 140, w: 230, h: 56, t: "Frontend", sub: "static HTML · CSS · JS, served by FastAPI", ch: "1", s: "present", sw: "adapt",
+    what: "A static site with no framework and no build step. Only js/api.js talks to the API. The browser keeps all state, so when the backend scales to zero an open page keeps working and the next click just waits (\"Waking up the shop…\"). Streamlit was used first and broke under open tabs on Azure.",
+    files: ["frontend/index.html", "frontend/js/api.js", "frontend/js/app.js", "frontend/js/pages/", "FRONTEND.md"],
+    swap: "index.html, styles.css, ui.js, sign-in and account pages stay; api.js and app.js adapt; the shop pages are replaced." },
+  { id: "legal", x: 210, y: 206, w: 70, h: 26, t: "legal", chip: 1, ch: "7", s: "partial", sw: "stays",
+    what: "Privacy policy and terms at /legal/privacy and /legal/terms, rendered from markdown (copied from kooistra-web). Drafts, pending review.", files: ["docs/legal/", "api/content/"], swap: "The renderer stays; the texts are rewritten." },
+  { id: "help", x: 286, y: 206, w: 60, h: 26, t: "help", chip: 1, ch: "7", s: "present", sw: "stays",
+    what: "A help centre at /help: getting started, renting, buying, account and tokens, staff. Linked from every page's footer.", files: ["docs/help/", "api/content/"], swap: "The renderer stays; the articles are rewritten." },
+  { id: "analytics", x: 352, y: 206, w: 88, h: 26, t: "analytics", chip: 1, ch: "6", s: "present", sw: "stays",
+    what: "First-party and anonymous: one row per catalogue view, bike view, quote, booking and reservation, with the day only (no cookies, no user id, no IP). A staff page shows per-day counts, top bikes and the quote → booking rate.", files: ["api/services/analytics_service.py", "frontend/js/pages/staff-analytics.js"], swap: "Stays; adapt the event names." },
+
+  { id: "api", x: 470, y: 140, w: 230, h: 56, t: "API", sub: "FastAPI · docs at /docs", ch: "1", s: "present", sw: "adapt",
+    what: "FastAPI, built as a class (BikeShopAPI) with one router per area, the structure of VoltagePredictor. Every endpoint has a stable operation_id for the LLM tools.",
+    files: ["api/main.py", "api/expose_api.py", "api/router/"], swap: "main.py adapts (the list of routers). Auth and billing routers stay; the shop routers are replaced." },
+  { id: "signin", x: 720, y: 140, w: 210, h: 26, t: "sign-in · API keys", chip: 1, ch: "3", s: "present", sw: "stays",
+    what: "Username + password give an API key; the key goes in every request. Passwords stored with bcrypt, keys as hashes.",
+    files: ["api/middleware/auth_middleware.py", "api/services/auth_service.py", "api/router/auth_router.py"], swap: "Reused as it is." },
+  { id: "roles", x: 720, y: 172, w: 210, h: 26, t: "roles", chip: 1, ch: "3", s: "present", sw: "adapt",
+    what: "customer / staff. /staff/* answers 403 to customers. Staff can only be created from the server's command line.",
+    files: ["api/middleware/auth_middleware.py", "scripts/create_staff.py"], swap: "Role names and the staff-only path." },
+  { id: "rate", x: 720, y: 204, w: 210, h: 26, t: "rate limit", chip: 1, ch: "3", s: "present", sw: "stays",
+    what: "60 calls/minute, 1,000/hour, 5,000/day per user.", files: ["api/middleware/rate_limit_middleware.py", "api/services/rate_limit_service.py"], swap: "Reused as it is." },
+  { id: "shield", x: 720, y: 236, w: 210, h: 26, t: "shield", chip: 1, ch: "3", s: "partial", sw: "stays",
+    what: "Input validation (Pydantic models, shop rules), SQL injection prevented by SQLAlchemy, CORS limited to the app's own origin, and the frontend puts API text on the page as text, never as HTML. No prompt-injection guard yet: there is no LLM feature yet.",
+    files: ["api/models/models.py", "frontend/js/ui.js"], swap: "The mechanisms stay; the validation rules go with the models." },
+  { id: "billing", x: 720, y: 268, w: 210, h: 26, t: "token billing", chip: 1, ch: "–", s: "present", sw: "stays",
+    what: "Not on the lecture's map: each /api call costs API tokens, copied from Use_Case_III (reads 1, booking 5, cancel 0).",
+    files: ["api/middleware/billing_middleware.py", "api/services/billing_service.py", "api/router/billing_router.py"], swap: "Stays; adapt the cost list in config.py." },
+
+  { id: "backend", x: 470, y: 240, w: 230, h: 56, t: "Backend", sub: "services: the shop rules", ch: "1", s: "present", sw: "replace",
+    what: "The shop rules live in services that know nothing about HTTP: pricing, availability, bookings, sales, notifications. The LLM tools can call them directly.",
+    files: ["api/services/pricing_service.py", "api/services/rental_service.py", "api/services/order_service.py", "api/services/inventory_service.py", "api/services/errors.py"],
+    swap: "This is the use case: pricing, rental, order, inventory and notification are replaced; errors, auth, billing, rate limit, inference and analytics stay." },
+  { id: "queue", x: 210, y: 250, w: 110, h: 44, t: "Queue", ch: "5", s: "present", sw: "stays",
+    what: "A job queue in SQLite: claim inside BEGIN IMMEDIATE, retries with back-off, a heartbeat and a reaper for jobs whose worker died. A request enqueues; GET /api/jobs/{id} shows the result.", files: ["api/jobqueue/queue.py", "SPEC.md §5.8"], swap: "The queue stays." },
+  { id: "worker", x: 330, y: 250, w: 110, h: 44, t: "Worker", ch: "5", s: "present", sw: "adapt",
+    what: "Runs the queued jobs, today send_email; llm_task is the slot for the LLM assistant. Its own process (its own container on a VM, under Litestream on Azure).", files: ["scripts/worker.py", "api/jobqueue/handlers.py"], swap: "The loop stays; the handlers are replaced." },
+  { id: "scheduler", x: 210, y: 330, w: 230, h: 50, t: "Scheduler", sub: "inside the worker", ch: "5", s: "present", sw: "adapt",
+    what: "The worker also releases reserved sale bikes after 7 days (every 15 minutes) and deletes old analytics once a day. One process, so it runs once and not once per API worker.",
+    files: ["scripts/worker.py", "SPEC.md §5.7"], swap: "The loop, JobRun and the container stay; the job it runs is replaced." },
+  { id: "db", x: 470, y: 330, w: 230, h: 50, t: "Database", sub: "SQLite on a Docker volume", ch: "4", s: "present", sw: "stays",
+    what: "One SQLite file on the bikeshop-data volume. WAL mode, and every write takes the lock first (BEGIN IMMEDIATE), so two customers can't book the same bike.",
+    files: ["api/database.py"], swap: "Reused as it is." },
+  { id: "schema", x: 470, y: 388, w: 230, h: 26, t: "schema · migrations", chip: 1, ch: "4", s: "partial", sw: "replace",
+    what: "The schema is in code, but tables are created with create_all: a new column on an existing table needs a migration tool (Alembic).",
+    files: ["api/models/models.py"], swap: "The user/key/usage tables stay; the shop tables (Bike, RentalRate, Rental, Order) are replaced." },
+  { id: "backups", x: 720, y: 330, w: 210, h: 50, t: "Backups", sub: "Litestream → Azure Blob", ch: "4", s: "present", sw: "stays",
+    what: "On Azure the container keeps no files, so Litestream copies every change to Azure Blob Storage within about a second and restores it when a container starts: a continuous backup of the database.",
+    files: ["litestream.yml", "scripts/start.sh"], swap: "Reused as it is." },
+  { id: "secrets", x: 720, y: 400, w: 210, h: 40, t: "Secrets · .env", ch: "2", s: "present", sw: "stays",
+    what: "Azure Container Apps secrets (or .env on a VM), never in the repo or the image. .env.example lists the keys.", files: [".env.example", ".gitignore"], swap: "Reused as it is." },
+  { id: "logs", x: 210, y: 430, w: 230, h: 44, t: "logs · metrics", sub: "JSON logs · /metrics · /health", ch: "6", s: "present", sw: "stays",
+    what: "JSON log lines from the API and the worker (Azure keeps them in Log Analytics). /metrics for Prometheus on a VM, with requests by route, the queue and the periodic jobs; off on Azure. /health shows the database, inference, the worker and the queue.",
+    files: ["api/observability.py", "api/main.py (health)"], swap: "Reused as it is." },
+
+  // outside the server
+  { id: "monitoring", x: 980, y: 420, w: 130, h: 44, t: "Monitoring", ch: "6", s: "present", sw: "stays",
+    what: "Azure Monitor: logs in Log Analytics, and Azure's own request, error and replica metrics per app. (Grafana can't read Azure from a BFH student account; for a VM a Grafana dashboard was prepared.)", files: ["SPEC.md §10.3"], swap: "Reused as it is." },
+  { id: "alert", x: 980, y: 484, w: 130, h: 36, t: "alert → on-call", chip: 1, ch: "6", s: "present", sw: "stays",
+    what: "Four Azure Monitor rules email the lecturer: 5xx responses, container restarts, exceptions in the logs, jobs that failed for good. About $1 a month.", files: ["SPEC.md §10.3", "COSTS.md"], swap: "Reused as it is." },
+  { id: "llm", x: 290, y: 550, w: 200, h: 50, t: "LLM provider", sub: "BFH inference (MLMP) · CH", ch: "5", s: "present", sw: "stays",
+    what: "BFH inference (MLMP), connected through the proxy and checked on /health. The LLM tools are the next step: a handler for llm_task in api/tools/, run by the worker.",
+    files: ["api/services/inference_service.py", "api/tools/", "SPEC.md §8"], swap: "The connection stays; the tools are replaced." },
+  { id: "email", sub: "Mailgun EU · mail.kooistra.ch", x: 510, y: 550, w: 150, h: 50, t: "Email", ch: "5", s: "present", sw: "stays",
+    what: "Booking confirmed, bike reserved, reservation expired: sent by the worker through Mailgun's EU endpoint, never inside a request. Without a Mailgun key the email goes to the log. Demo accounts (.test) are skipped.", files: ["api/mail/", "api/services/notification_service.py"], swap: "The mailer stays; the messages are replaced." },
+  { id: "sso", x: 680, y: 550, w: 170, h: 50, t: "SSO provider", sub: "e.g. SWITCH edu-ID", ch: "3", s: "missing", sw: "none",
+    what: "None: own accounts with a password.", files: [], swap: "—" },
+
+  // delivery lane
+  { id: "spec", x: 20, y: 640, w: 90, h: 40, t: "Spec", ch: "8", s: "present", sw: "adapt",
+    what: "SPEC.md is the contract, written before the code, with Given/When/Then for every build slice.", files: ["SPEC.md", "MAP.md"], swap: "§1–§7 (the domain) are rewritten; §8 inference, §10 deployment and the slice format stay." },
+  { id: "claude", x: 120, y: 640, w: 110, h: 40, t: "CLAUDE.md", ch: "8", s: "present", sw: "adapt",
+    what: "Instructions for Claude in the repo: change SPEC.md first, then code and tests; how to run the app; the house rules (layers, BEGIN IMMEDIATE, queue for slow work, no innerHTML, copy not import, no personal data to the LLM).", files: ["CLAUDE.md"], swap: "The house rules stay; the description of the app changes." },
+  { id: "git", x: 250, y: 640, w: 80, h: 40, t: "Git", ch: "2", s: "present", sw: "stays",
+    what: "github.com/juliuskooistra/SAI. The earlier use cases are in the history under the tag pre-bikeshop.", files: [], swap: "Reused as it is." },
+  { id: "ci", x: 350, y: 640, w: 120, h: 40, t: "CI (tests)", ch: "2", s: "present", sw: "adapt",
+    what: "About 120 tests, one group per build slice; GitHub Actions runs them on every push.", files: ["tests/", ".github/workflows/bikeshop.yml"], swap: "conftest.py and the platform tests stay; the shop tests are replaced." },
+  { id: "deploy", x: 490, y: 640, w: 100, h: 40, t: "deploy", ch: "2", s: "present", sw: "stays",
+    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
+  { id: "dev", x: 610, y: 640, w: 70, h: 40, t: "dev", ch: "2", s: "present", sw: "stays",
+    what: "Your laptop: uvicorn serves the API and the website, or Docker; deploy/azure/compose.azurite.yml mimics Azure.", files: ["README.md"], swap: "Reused as it is." },
+  { id: "staging", x: 690, y: 640, w: 90, h: 40, t: "staging", ch: "2", s: "present", sw: "stays",
+    what: "bikeshop-staging at staging.sai1.airs.iadsf.ch: the same image as production, its own data (its own Litestream path), no real emails. Every release runs here first.", files: ["SPEC.md §10.2", "DEPLOY-azure.md"], swap: "Reused as it is." },
+  { id: "prod", x: 790, y: 640, w: 70, h: 40, t: "prod", ch: "2", s: "present", sw: "stays",
+    what: "Azure Container Apps at demo.sai1.airs.iadsf.ch.", files: ["DEPLOY-azure.md"], swap: "Reused as it is." },
+  { id: "rollback", x: 880, y: 640, w: 110, h: 40, t: "rollback", ch: "2", s: "partial", sw: "stays",
+    what: "Every image is tagged with its commit, so re-running an earlier production deploy (or az containerapp update --image bikeshop:<hash>) goes back. Data changes are not rolled back.", files: ["DEPLOY-azure.md"], swap: "Reused as it is." },
+];
+
+// [from, to, label, dashed]
+const E = [
+  ["user", "browser", ""], ["browser", "dns", ""],
+  ["dns", "proxy", "HTTPS"], ["proxy", "frontend", ""], ["proxy", "api", ""],
+  ["frontend", "api", "calls"], ["api", "backend", ""], ["backend", "db", "reads · writes"],
+  ["scheduler", "db", "expires"], ["db", "backups", "", true], ["backend", "logs", ""],
+  ["logs", "monitoring", "", true], ["monitoring", "alert", "", true],
+  ["backend", "llm", "tools (next)", true],
+  ["spec", "claude", ""], ["claude", "git", ""], ["git", "ci", ""], ["ci", "deploy", ""],
+  ["deploy", "dev", ""], ["dev", "staging", ""], ["staging", "prod", ""], ["prod", "rollback", ""],
+];
+
+const svg = document.getElementById("map");
+const NS = "http://www.w3.org/2000/svg";
+const byId = Object.fromEntries(N.map(n => [n.id, n]));
+const el = (name, attrs, parent) => { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+
+// defs
+const defs = el("defs", {}, svg);
+const m = el("marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+el("path", { d: "M0,0 L10,5 L0,10 z", fill: "currentColor" }, m);
+svg.style.color = "var(--line)";
+
+// server frame
+el("rect", { x: 190, y: 40, width: 760, height: 455, rx: 12, class: "frame" }, svg);
+const fl = el("text", { x: 206, y: 32, class: "framelabel" }, svg); fl.textContent = "SERVER · AZURE CONTAINER APPS   ·   nDSG / GDPR: username, email, rentals, orders";
+const ll = el("text", { x: 20, y: 628, class: "lane" }, svg); ll.textContent = "DELIVERY";
+
+// edges
+function anchor(a, b) {
+  const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  const dx = bc.x - ac.x, dy = bc.y - ac.y;
+  const edge = (n, c, sx, sy) => Math.abs(sx) * n.h > Math.abs(sy) * n.w
+    ? { x: c.x + Math.sign(sx) * n.w / 2, y: c.y + sy * (n.w / 2) / Math.abs(sx || 1) }
+    : { x: c.x + sx * (n.h / 2) / Math.abs(sy || 1), y: c.y + Math.sign(sy) * n.h / 2 };
+  return [edge(a, ac, dx, dy), edge(b, bc, -dx, -dy)];
+}
+const edgeLayer = el("g", {}, svg);
+for (const [f, t, label, dashed] of E) {
+  const [p, q] = anchor(byId[f], byId[t]);
+  el("line", { x1: p.x, y1: p.y, x2: q.x, y2: q.y, class: "edge", "marker-end": "url(#arrow)", ...(dashed ? { "stroke-dasharray": "4 4" } : {}) }, edgeLayer);
+  if (label) { const tx = el("text", { x: (p.x + q.x) / 2 + 6, y: (p.y + q.y) / 2 - 4, class: "edgelabel" }, edgeLayer); tx.textContent = label; }
+}
+
+// nodes
+const nodeEls = {};
+for (const n of N) {
+  const g = el("g", { class: `node s-${n.s} w-${n.sw}${n.chip ? " chip" : ""}`, tabindex: 0, role: "button", "aria-label": `${n.t}: ${STATUS[n.s]}, ${SWAP[n.sw]}` }, svg);
+  el("rect", { x: n.x, y: n.y, width: n.w, height: n.h, rx: n.chip ? 13 : 7 }, g);
+  const ty = n.sub ? n.y + n.h / 2 - 3 : n.y + n.h / 2 + 4.5;
+  const t = el("text", { x: n.x + n.w / 2, y: ty, "text-anchor": "middle", class: "t" }, g); t.textContent = n.t;
+  if (n.sub) { const s = el("text", { x: n.x + n.w / 2, y: n.y + n.h / 2 + 13, "text-anchor": "middle", class: "sub" }, g); s.textContent = n.sub; }
+  g.addEventListener("click", () => select(n.id));
+  g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(n.id); } });
+  nodeEls[n.id] = g;
+}
+
+// panel
+const panel = document.getElementById("panel");
+let current = "api";
+function select(id) {
+  current = id;
+  for (const k in nodeEls) nodeEls[k].classList.toggle("sel", k === id);
+  const n = byId[id];
+  const files = n.files.length ? `<ul class="files">${n.files.map(f => `<li>${f}</li>`).join("")}</ul>` : `<p style="color:var(--muted)">No files: not in this app.</p>`;
+  panel.innerHTML = `
+    <p class="chapter">${n.ch === "–" ? "Not on the lecture map" : "Lecture chapter " + n.ch}</p>
+    <h2>${n.t}</h2>
+    <div class="pills"><span class="pill p-${n.s}">${STATUS[n.s]}</span><span class="pill p-${n.sw}">${SWAP[n.sw]}</span></div>
+    <p>${n.what}</p>
+    <h3>Where</h3>${files}
+    <h3>Swap the use case</h3><p>${n.swap}</p>
+    <p class="hint">Click any box on the map, or tab to it and press Enter.</p>`;
+}
+
+// view switch
+const legend = document.getElementById("legend"), caption = document.getElementById("caption");
+const bS = document.getElementById("btn-status"), bW = document.getElementById("btn-swap");
+function view(mode) {
+  svg.setAttribute("class", mode);
+  bS.setAttribute("aria-pressed", mode === "status"); bW.setAttribute("aria-pressed", mode === "swap");
+  if (mode === "status") {
+    legend.innerHTML = `<span><i class="sw" style="border-color:var(--ok);background:var(--ok-tint)"></i>In BikeShop</span><span><i class="sw" style="border-color:var(--part);background:var(--part-tint)"></i>Partly</span><span><i class="sw" style="border-color:var(--none);border-style:dashed"></i>Not in BikeShop</span>`;
+    caption.textContent = "Coloured by what BikeShop has. Dashed boxes are on the lecture's map but left out of this app.";
+  } else {
+    legend.innerHTML = `<span><i class="sw" style="border-color:var(--stay);background:var(--stay-tint)"></i>Stays</span><span><i class="sw" style="border-color:var(--adapt);background:var(--adapt-tint)"></i>Adapt</span><span><i class="sw" style="border-color:var(--repl);background:var(--repl-tint)"></i>Replace</span><span><i class="sw" style="border-color:var(--none);border-style:dashed"></i>Not in the app</span>`;
+    caption.textContent = "Coloured by what happens to each box when the bike shop is swapped for another use case.";
+  }
+  try { history.replaceState(null, "", mode === "swap" ? "#swap" : "#status"); } catch (e) {}
+}
+bS.addEventListener("click", () => view("status"));
+bW.addEventListener("click", () => view("swap"));
+window.addEventListener("hashchange", () => view(location.hash === "#swap" ? "swap" : "status"));
+
+view(location.hash === "#swap" ? "swap" : "status");
+select(current);
+</script>
+</body>
+</html>

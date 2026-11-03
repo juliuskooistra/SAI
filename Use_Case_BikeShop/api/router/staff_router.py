@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
 from ..database import get_db
@@ -9,6 +9,8 @@ from ..models.models import (
     BikeCreateRequest, BikeResponse, BikeUpdateRequest, Category, InventoryCount, InventorySummary,
     OrderResponse, OrderStatus, RentalRateRequest, RentalRateResponse, RentalResponse, RentalStatus,
 )
+from ..services import analytics_service
+from ..services.analytics_service import AnalyticsSummary
 from ..services.inventory_service import InventoryService
 from ..services.order_service import OrderService
 from ..services.rental_service import RentalService
@@ -46,6 +48,7 @@ class StaffRouter:
         r.get("/orders", response_model=List[OrderResponse], summary="All orders")(self.list_orders)
         r.post("/orders/{order_id}/complete", response_model=OrderResponse, summary="Customer paid and took the bike")(self.complete_order)
         r.post("/orders/{order_id}/cancel", response_model=OrderResponse, summary="Cancel a reservation")(self.staff_cancel_order)
+        r.get("/analytics", response_model=AnalyticsSummary, summary="Anonymous product analytics")(self.analytics_summary)
 
     # ------------------------------------------------------------ bikes
 
@@ -128,3 +131,14 @@ class StaffRouter:
         """Cancels a reservation; the bike is for sale again."""
         order = self.order_service.cancel(db, order_id)
         return OrderResponse(**self.order_service.describe(db, order, True))
+
+    # ------------------------------------------------------------ analytics
+
+    def analytics_summary(self, days: int = Query(30, ge=1, le=365, description="Period in days, today included"),
+                          db: Session = Depends(get_db)) -> AnalyticsSummary:
+        """
+        Anonymous product analytics (SPEC §5.10): counts per day and event, the
+        10 most-viewed bikes, and how many quotes became bookings. Days are
+        Zurich dates. No user ids are stored, so none are shown.
+        """
+        return analytics_service.summary(db, days)

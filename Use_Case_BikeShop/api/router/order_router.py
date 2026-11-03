@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from ..database import get_db
 from ..models.models import OrderRequest, OrderResponse
+from ..services import analytics_service
 from ..services.order_service import OrderService
 
 
@@ -37,7 +38,9 @@ class OrderRouter:
         sale again. Changes state: confirm with the customer first. Costs 5 API tokens.
         """
         order = self.order_service.reserve(db, req.state.user_id, request.bike_id)
-        return OrderResponse(**self.order_service.describe(db, order))
+        result = OrderResponse(**self.order_service.describe(db, order))
+        analytics_service.record(db, "reservation", result.bike_id)   # anonymous (SPEC §5.10)
+        return result
 
     def list_my_orders(self, req: Request, db: Session = Depends(get_db)) -> List[OrderResponse]:
         """Use this to see the caller's reservations and purchases."""

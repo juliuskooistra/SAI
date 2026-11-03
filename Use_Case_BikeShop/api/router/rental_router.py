@@ -9,6 +9,7 @@ from ..models.models import (
     AvailabilityResponse, AvailableBike, BikeResponse, Category, FrameSize, QuoteResponse,
     RentalPeriodRequest, RentalResponse, RentalStatus,
 )
+from ..services import analytics_service
 from ..services.rental_service import RentalService
 from ..timeutils import to_utc
 
@@ -79,7 +80,9 @@ class RentalRouter:
         """
         start, end = to_utc(request.start_at), to_utc(request.end_at)
         bike, rate, price = self.rental_service.quote(db, request.bike_id, start, end)
-        return quote_response(bike, rate, price, start, end)
+        result = quote_response(bike, rate, price, start, end)
+        analytics_service.record(db, "quote", bike.id)   # anonymous, never fails the request (SPEC §5.10)
+        return result
 
     def book_rental(self, request: RentalPeriodRequest, req: Request, db: Session = Depends(get_db)) -> RentalResponse:
         """
@@ -89,7 +92,9 @@ class RentalRouter:
         """
         rental = self.rental_service.book(db, req.state.user_id, request.bike_id,
                                           to_utc(request.start_at), to_utc(request.end_at))
-        return RentalResponse(**self.rental_service.describe(db, rental))
+        result = RentalResponse(**self.rental_service.describe(db, rental))
+        analytics_service.record(db, "booking", result.bike_id)
+        return result
 
     def list_my_rentals(self, req: Request, status: Optional[RentalStatus] = None,
                         db: Session = Depends(get_db)) -> List[RentalResponse]:

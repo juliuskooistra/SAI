@@ -116,3 +116,17 @@ def test_revoked_key_stops_working(client, db):
 def test_login_returns_role(client, shop):
     r = client.post("/auth/login", json={"username": "sam", "password": "correct-horse-battery"})
     assert r.json()["role"] == "staff"
+
+
+# ---------------------------------------------------------------- S10: static frontend
+
+def test_frontend_is_served_and_api_keeps_priority(client):
+    page = client.get("/")
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert "<!DOCTYPE html>" in page.text or "<!doctype html>" in page.text.lower()
+    js = client.get("/js/app.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+    assert client.get("/styles.css").headers["content-type"].startswith("text/css")
+    assert client.get("/api/bikes").status_code == 401        # still the API, not a file
+    assert client.get("/health").json()["status"] == "ok"
+    assert client.get("/docs").status_code == 200

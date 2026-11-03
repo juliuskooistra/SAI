@@ -4,25 +4,29 @@ from .router.order_router import OrderRouter
 from .router.staff_router import StaffRouter
 from .router.auth_router import AuthRouter
 from .router.billing_router import BillingRouter
+from .router.job_router import JobRouter
 
 from .middleware.auth_middleware import AuthenticationMiddleware
 from .middleware.rate_limit_middleware import RateLimitMiddleware
 from .middleware.billing_middleware import BillingMiddleware
 
-from .config import CORS_ORIGINS
+from .config import CORS_ORIGINS, FRONTEND_DIR, METRICS_ENABLED, SERVICE_NAME
 from .database import init_database, check_database, get_db
-from .models.models import HealthResponse, JobRun, JobStatus
+from .jobqueue import queue as job_queue
+from .models.models import HealthResponse, JobRun, JobStatus, WorkerStatus
 from .services.errors import ShopError
 from .services.inference_service import InferenceService
+from .observability import MetricsMiddleware, metrics_response, setup_logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 import uvicorn
 from scalar_fastapi import get_scalar_api_reference
 
-DOCS_PATHS = ["/docs", "/redoc", "/openapi.json", "/health"]
+DOCS_PATHS = ["/docs", "/redoc", "/openapi.json", "/health", "/metrics"]
 
 
 class BikeShopAPI:
@@ -35,6 +39,8 @@ class BikeShopAPI:
         """
         Initialize the BikeShopAPI with FastAPI and register the routers.
         """
+        # JSON logs on stdout (SPEC §10.3)
+        setup_logging(service=SERVICE_NAME)
         # Initialize database
         init_database()
         self.inference_service = InferenceService()
@@ -80,7 +86,11 @@ class BikeShopAPI:
             staff_paths=["/staff/"]
         )
 
-        # 4. CORS middleware (added last, runs first). Origins come from .env.
+        # 4. Metrics: counts and times every request (SPEC §10.3)
+        if METRICS_ENABLED:
+            self.app.add_middleware(MetricsMiddleware)
+
+        # 5. CORS middleware (added last, runs first). Origins come from .env.
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=CORS_ORIGINS,
@@ -113,28 +123,52 @@ class BikeShopAPI:
         # Staff (authentication and the staff role checked by middleware)
         self.app.include_router(StaffRouter().router, prefix="/staff", tags=["staff"])
 
+        # --- S14 hook: job router (GET /api/jobs/{id}) -------------------------
+        jobs = JobRouter()
+        self.app.include_router(jobs.router, prefix="/api", tags=["jobs"])
+        self.app.include_router(jobs.staff_router, prefix="/staff", tags=["staff"])
+
+        # --- S16 hook: help and legal pages (/help, /legal/*) ------------------
+        from .content import mount_content_pages   # HTML from docs/*.md, SPEC §6
+        mount_content_pages(self.app)               # before the frontend mount below
+
         self.app.add_api_route("/health", self.health, methods=["GET"], response_model=HealthResponse,
                                tags=["health"], summary="Is the API up, and can it reach its dependencies?")
         # Add a custom docs route
         self.app.add_api_route("/docs", self._get_docs, include_in_schema=False)
+        # Prometheus metrics: never public (nginx blocks it; off on Azure), SPEC §10.3
+        if METRICS_ENABLED:
+            self.app.add_api_route("/metrics", metrics_response, include_in_schema=False)
+
+        # The static frontend (SPEC §7). Mounted last, so the API's routes
+        # above keep priority and everything else is a file from frontend/.
+        if FRONTEND_DIR.is_dir():
+            self.app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
     def health(self) -> HealthResponse:
         """
         Public. Always 200 while the API runs: a down LLM endpoint must not make
-        the shop look dead (SPEC §8.1). Shows the scheduler's last run (§5.7).
+        the shop look dead (SPEC §8.1). Shows the reservation expiry's last run
+        (§5.7), when the worker last polled, and the queue by status (§5.8).
         """
         db: Session = next(get_db())
+        scheduler, worker, queue = JobStatus(), WorkerStatus(), {}
         try:
             job = db.get(JobRun, "expire-reservations")
             scheduler = JobStatus.model_validate(job) if job else JobStatus()
+            seen = db.get(JobRun, "worker")
+            worker = WorkerStatus(last_seen=seen.last_run_at if seen else None)
+            queue = job_queue.counts(db)
         except Exception:  # noqa: BLE001 - health check reports, never raises
-            scheduler = JobStatus()
+            pass
         finally:
             db.close()
         return HealthResponse(
             database=check_database(),
             inference=self.inference_service.check(),
             scheduler=scheduler,
+            worker=worker,
+            queue=queue,
         )
 
     def _get_docs(self):

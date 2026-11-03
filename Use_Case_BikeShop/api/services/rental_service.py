@@ -21,6 +21,7 @@ from ..models.models import (
 )
 from ..timeutils import utcnow, to_local, format_local
 from .errors import Conflict, NotFound, RuleViolation
+from .notification_service import NotificationService
 from .pricing_service import PriceBreakdown, rental_price
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -149,6 +150,7 @@ class RentalService:
         """
         Book a bike. Check and insert happen in one BEGIN IMMEDIATE transaction,
         so two customers can't book the same bike for overlapping times.
+        The confirmation email is enqueued in that transaction too.
         """
         self.validate_period(start, end)
         start_write_transaction(db)
@@ -175,6 +177,9 @@ class RentalService:
                 quoted_price_chf=price.total_chf,
             )
             db.add(rental)
+            db.flush()
+            # The confirmation email is queued in the same transaction (SPEC §5.8, §5.9)
+            NotificationService().booking_confirmed(db, rental)
             db.commit()
             db.refresh(rental)
             return rental

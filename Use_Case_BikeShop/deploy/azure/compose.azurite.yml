@@ -1,0 +1,74 @@
+# The Azure set-up (SPEC §10.2) on your laptop, without an Azure account.
+# Azurite is Microsoft's local Blob Storage emulator. The API has no volume,
+# like on Azure: its data survives only through Litestream's copy in Azurite.
+#
+#   docker compose -f deploy/azure/compose.azurite.yml up -d --build
+#   open http://localhost:8140            (API docs: http://localhost:8140/docs)
+#
+#   # "Scale to zero": throw the API container away, disk and all, and start a new one
+#   docker compose -f deploy/azure/compose.azurite.yml rm -sf api
+#   docker compose -f deploy/azure/compose.azurite.yml up -d api
+#   docker compose -f deploy/azure/compose.azurite.yml logs api   # "restoring ... "
+#
+#   docker compose -f deploy/azure/compose.azurite.yml down -v    # remove everything
+#
+# Demo passwords come from SEED_STAFF_PASSWORD / SEED_CUSTOMER_PASSWORD in .env.
+
+name: bikeshop-azurite
+
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    command: ["azurite-blob", "--blobHost", "0.0.0.0", "--skipApiVersionCheck"]
+    volumes:
+      - azurite-data:/data
+
+  # Creates the blob container once (on Azure the runbook does this with az).
+  blob-container:
+    image: python:3.12-slim
+    depends_on: [azurite]
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        pip -q install --root-user-action=ignore azure-storage-blob==12.27.1 >/dev/null 2>&1
+        python - <<'PY'
+        import time
+        from azure.storage.blob import BlobServiceClient
+        from azure.core.exceptions import ResourceExistsError
+        conn = ("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+                "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                "BlobEndpoint=http://azurite:10000/devstoreaccount1;")
+        for _ in range(30):
+            try:
+                BlobServiceClient.from_connection_string(conn).create_container("litestream")
+                print("created container litestream"); break
+            except ResourceExistsError:
+                print("container litestream exists"); break
+            except Exception as e:
+                time.sleep(1)
+        PY
+
+  api:
+    build: ../..
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      APP_MODE: all
+      SEED_ON_START: "1"
+      UVICORN_WORKERS: "2"
+      # Azurite's fixed development account (public, same for everyone)
+      LITESTREAM_AZURE_ACCOUNT_NAME: devstoreaccount1
+      LITESTREAM_AZURE_ACCOUNT_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+      LITESTREAM_AZURE_CONTAINER: litestream
+      LITESTREAM_AZURE_ENDPOINT: http://azurite:10000/devstoreaccount1/
+    ports:
+      - "127.0.0.1:8140:8000"
+    depends_on:
+      blob-container:
+        condition: service_completed_successfully
+
+volumes:
+  azurite-data:

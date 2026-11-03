@@ -1,9 +1,11 @@
-# BikeShop on one machine (SPEC §10).
+# BikeShop on one machine (SPEC §10.1). FastAPI serves the API and the
+# static frontend on one port; the worker (job queue, reservation expiry)
+# runs in its own container.
 #
 #   docker compose up -d --build
 #   docker compose exec api python -m scripts.seed
 #
-# Ports are published on 127.0.0.1 only: nginx on the host is the only way in.
+# The port is published on 127.0.0.1 only: nginx on the host is the only way in.
 # Docker's port publishing bypasses ufw, so "8130:8000" without the address
 # would put the bare API on the internet.
 
@@ -24,26 +26,15 @@ services:
       retries: 3
       start_period: 15s
 
-  # The scheduled job (SPEC §5.7): same image, its own process, so it runs
-  # once and not once per uvicorn worker.
-  scheduler:
+  # The worker (SPEC §5.7, §5.8): runs queued jobs (emails) and the
+  # reservation expiry. Same image, its own process, so it runs once and not
+  # once per uvicorn worker.
+  worker:
     image: bikeshop-api
-    command: ["python", "-m", "scripts.scheduler"]
+    command: ["python", "-m", "scripts.worker"]
     env_file: .env
     volumes:
       - bikeshop-data:/app/api/data
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-
-  frontend:
-    build: ./frontend
-    image: bikeshop-frontend
-    environment:
-      BIKESHOP_API_URL: http://api:8000
-    ports:
-      - "127.0.0.1:8131:8501"
     restart: unless-stopped
     depends_on:
       api:

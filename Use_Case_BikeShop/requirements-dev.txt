@@ -44,6 +44,8 @@ iniconfig==2.3.1
     # via pytest
 jiter==0.18.0
     # via openai
+markdown==3.11.2
+    # via -r requirements.in
 openai==3.42.1
     # via -r requirements.in
 opentelemetry-api==1.45.2
@@ -52,6 +54,8 @@ packaging==26.3
     # via pytest
 pluggy==1.7.0
     # via pytest
+prometheus-client==0.26.0
+    # via -r requirements.in
 pydantic==2.14.2
     # via
     #   fastapi

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!--
+  BikeShop: the one HTML page of the frontend (SPEC §7).
+
+  It only holds the frame: header, menu, the "waking up" banner and an empty
+  <main>. JavaScript (js/app.js) fills <main> with the page that the part of
+  the address after "#" asks for, e.g. #/catalogue or #/bike/12.
+  FastAPI serves this file at "/" from the same server as the API.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BikeShop</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#/catalogue">BikeShop</a>
+    <!-- Filled by app.js after sign-in; staff links only for role "staff". -->
+    <nav id="menu" aria-label="Main menu"></nav>
+    <div id="user-box" class="user-box"></div>
+  </header>
+
+  <!-- Shown by js/api.js while a request takes longer than 2 seconds. -->
+  <div id="waking" class="waking" role="status" hidden>
+    Waking up the shop, this can take up to 30 seconds
+  </div>
+
+  <main id="main" tabindex="-1">
+    <noscript>BikeShop needs JavaScript to run.</noscript>
+  </main>
+
+  <!-- Help, privacy and terms are plain HTML pages rendered by the server
+       from docs/*.md (SPEC §6), so they are normal links, not "#/" pages. -->
+  <footer class="site-footer">
+    <nav class="footer-links" aria-label="Help and legal">
+      <a href="/help">Help</a> ·
+      <a href="/legal/privacy">Privacy</a> ·
+      <a href="/legal/terms">Terms</a>
+    </nav>
+    <p>BikeShop, a worked example for the SAI lecture. API docs: <a href="/docs">/docs</a></p>
+  </footer>
+</body>
+</html>

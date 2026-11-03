@@ -1,0 +1,12 @@
+# Litestream copies the SQLite file to Azure Blob Storage about once a second,
+# and restores it when a fresh container starts (SPEC §10.2).
+# Only used with APP_MODE=all (scripts/start.sh). Values come from the
+# environment; the account key is read from LITESTREAM_AZURE_ACCOUNT_KEY.
+dbs:
+  - path: ${BIKESHOP_DATA_DIR}/bikeshop.db
+    replica:
+      type: abs
+      account-name: ${LITESTREAM_AZURE_ACCOUNT_NAME}
+      bucket: ${LITESTREAM_AZURE_CONTAINER}
+      path: ${LITESTREAM_PATH}   # bikeshop (production) or bikeshop-staging
+      endpoint: ${LITESTREAM_AZURE_ENDPOINT}
