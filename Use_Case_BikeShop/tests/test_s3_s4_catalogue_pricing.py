@@ -6,7 +6,7 @@ import pytest
 
 from api.models.models import BikeStatus, Category, Purpose
 from api.services.errors import InvalidInput
-from api.services.pricing_service import rental_price, validate_rate
+from api.services.pricing_service import deposit, rental_price, validate_rate
 
 from .conftest import SAT, book, make_bike
 
@@ -108,3 +108,23 @@ def test_retired_bike_cannot_be_edited(client, shop):
     client.post(f"/staff/bikes/{bike}/retire", headers=shop["staff"])
     r = client.patch(f"/staff/bikes/{bike}", json={"status": "available"}, headers=shop["staff"])
     assert r.status_code == 409 and "retired" in r.json()["detail"]
+
+
+
+@pytest.mark.parametrize("total, cap, expected", [("24.00", "100", "48.00"), ("51.00", "100", "100.00"),
+                                                  ("51.00", "60", "60.00")])
+def test_deposit_is_twice_the_price_at_most_the_cap(total, cap, expected):
+    assert deposit(Decimal(total), Decimal(cap)) == Decimal(expected)
+
+
+def test_quote_has_the_capped_deposit(client, shop):
+    def quote(end):
+        return client.post("/api/rentals/quote", json={"bike_id": shop["bikes"]["r1"].id, "start_at": f"{SAT}T10:00",
+                                                       "end_at": end}, headers=shop["customer"]).json()
+    q = quote(f"{SAT}T13:00")                                     # 3 h, city cap 100
+    assert (q["total_chf"], q["deposit_chf"]) == ("24.00", "48.00")
+    assert quote("2026-11-09T12:00")["deposit_chf"] == "100.00"   # 50 h: 2 x 86 = 172, capped
+    r = client.put("/staff/rental-rates/city", json={"hourly_chf": "8", "daily_chf": "35", "deposit_chf": "60"},
+                   headers=shop["staff"])
+    assert r.status_code == 200 and r.json()["deposit_chf"] == "60.00"
+    assert quote("2026-11-09T12:00")["deposit_chf"] == "60.00"

@@ -79,8 +79,10 @@ Dependencies: declare in `requirements.in`, then
 - **Slow or failing work** (email, LLM calls) goes through the job queue
   (`api/jobqueue/`, SPEC §5.8), never inside a request.
 - **LLM features** (chat assistant, management agents) build on SPEC §8:
-  tools live in `api/tools/` and call the services in-process; the model
-  client is `inference_service.get_client()` (BFH MLMP, OpenAI-compatible,
+  tools live in `api/tools/` (only what the AI can call) and call the
+  services in-process; the connection, the chat loop and the prompt guard
+  are services (`llm_service.py`, `chat_service.py`, `guard_service.py`).
+  The model client is `inference_service.get_client()` (BFH MLMP, OpenAI-compatible,
   2 concurrent requests and 30 per minute); long runs are `llm_task` jobs on
   the queue. Prompts get bikes, prices and ids, never names, emails or
   usernames. The agent's tools may only do what its user's role allows:
@@ -88,7 +90,7 @@ Dependencies: declare in `requirements.in`, then
   agent can't call. The website's assistant (SPEC §13.8) runs each answer
   as an `assistant_reply` job and keeps the five prompt-injection layers:
   don't remove one, and give any new tool that changes data a
-  once-per-message limit in `api/tools/chat.py`.
+  once-per-message limit in `api/services/chat_service.py`.
 - **Frontend**: plain HTML/CSS/JS modules, no framework, no build step,
   nothing from other sites. Only `js/api.js` calls `fetch`. Never put API
   text into `innerHTML`; use `el()`/`textContent`.

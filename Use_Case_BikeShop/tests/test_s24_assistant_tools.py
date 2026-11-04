@@ -1,7 +1,7 @@
 """S24 assistant tools (SPEC §11, §13). No AI and no network: the AI is faked, the weather mocked."""
 import json
 import pickle
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import httpx
 import openai
@@ -13,7 +13,7 @@ from api.services.pricing_service import rental_price
 from api.timeutils import to_utc
 from api.tools import demand
 from api.tools.assistant_tools import TOOLS, run_tool
-from api.tools.llm import BUSY_MESSAGE, AIError, Busy, OpenAIChat, Reply, ToolCall, openai_tools
+from api.services.llm_service import BUSY_MESSAGE, AIError, Busy, OpenAIChat, Reply, ToolCall, openai_tools
 from scripts.assistant_step3_chat import chat_turn
 from scripts.train_demand_model import make_history, train
 
@@ -61,7 +61,9 @@ def test_quote_matches_pricing_service(db, shop, carla):
     expected = rental_price(to_utc(datetime.fromisoformat(inputs["start_at"])),
                             to_utc(datetime.fromisoformat(inputs["end_at"])), 8, 35)
     assert r["total_chf"] == str(expected.total_chf) == "86.00"   # 50 h = 2 days + 2 h
-    assert r["deposit_chf"] == "100.00"
+    assert r["deposit_chf"] == "100.00"                            # 2 x 86 = 172, capped at 100 (SPEC §5.3)
+    assert r["start_day"] == "Saturday 7 November 2026, 10:00"
+    assert r["end_day"] == "Monday 9 November 2026, 12:00"
 
 
 def test_booking_belongs_to_the_signed_in_customer_and_names_nobody(db, shop, carla):
@@ -221,3 +223,48 @@ def test_forecast_without_model_says_how_to_train(db, shop, carla, tmp_path, mon
 
 def test_forecast_rejects_the_past(db, shop, carla, model_file):
     assert "in the past" in run_tool("demand_forecast", {"category": "city", "date": "2026-10-31"}, db, carla)["error"]
+
+
+def test_system_prompt_spells_out_the_weekdays():
+    # The bug: on Wednesday 4 Nov, "tomorrow" came back as "Wednesday 5 November".
+    from api import timeutils
+    from api.tools.assistant_tools import system_prompt
+    timeutils.freeze_time(datetime(2026, 11, 4, 9, 0, tzinfo=timezone.utc))   # Wed 10:00 Zurich
+    prompt = system_prompt()
+    assert "- Wednesday 2026-11-04 (today)" in prompt
+    assert "- Thursday 2026-11-05 (tomorrow)" in prompt
+    assert "- Saturday 2026-11-07" in prompt and "- Tuesday 2026-11-17" in prompt   # 14 days
+    assert "2026-11-18" not in prompt
+
+
+def test_availability_names_the_weekday_of_each_time(db, shop, carla):
+    r = run_tool("check_availability", {"start_at": f"{SAT}T10:00", "end_at": f"{SAT}T14:00"}, db, carla)
+    assert r["start_day"] == "Saturday 7 November 2026, 10:00"
+    assert r["end_day"] == "Saturday 7 November 2026, 14:00"
+
+
+def test_bfh_always_uses_mlmp_model(monkeypatch, capsys):
+    # ASSISTANT_MODEL is for the other providers; it must never reach BFH (SPEC §13.2).
+    from api.services import llm_service
+    from api.services.inference_service import InferenceService
+    monkeypatch.setattr(llm_service, "ASSISTANT_MODEL", "claude-sonnet-5-5")
+    monkeypatch.setattr(InferenceService, "get_client", lambda self: object())   # no key needed
+    ai = llm_service.connect("system", TOOLS, provider="bfh")
+    assert (ai.provider, ai.model) == ("bfh", InferenceService().model)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert llm_service.connect("system", TOOLS, provider="openai").model == "claude-sonnet-5-5"
+    assert capsys.readouterr().out == ""   # a service prints nothing
+
+
+@pytest.mark.parametrize("provider, expected", [
+    ("nonsense", "Unknown ASSISTANT_PROVIDER"),
+    ("mistral", "needs MISTRAL_API_KEY"),
+    ("bfh", "BFH inference is not configured"),
+])
+def test_setup_problems_raise_not_configured(monkeypatch, provider, expected):
+    from api.services import llm_service
+    from api.services.inference_service import InferenceService
+    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+    monkeypatch.setattr(InferenceService, "is_configured", lambda self: False)
+    with pytest.raises(llm_service.NotConfigured, match=expected):
+        llm_service.connect("system", TOOLS, provider=provider)

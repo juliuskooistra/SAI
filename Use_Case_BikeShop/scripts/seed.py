@@ -26,7 +26,7 @@ from api.timeutils import to_local, utcnow
 
 D = Decimal
 
-# category: (hourly, daily, deposit) in CHF
+# category: (hourly, daily, deposit cap) in CHF. Deposit = min(2 x price, cap) (SPEC §5.3).
 RATES = {
     Category.city: (D("8"), D("35"), D("100")),
     Category.ebike: (D("15"), D("65"), D("300")),

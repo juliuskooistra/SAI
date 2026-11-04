@@ -78,7 +78,7 @@ async function drawRent(area, bike, query) {
   show(area,
     rate ? [
       el("h2", {}, `${fmtChf(rate.hourly_chf)} per hour, at most ${fmtChf(rate.daily_chf)} per day`),
-      el("p", { class: "muted small" }, `Deposit at pick-up: ${fmtChf(rate.deposit_chf)}, paid back on return.`),
+      el("p", { class: "muted small" }, `Deposit at pick-up: twice the rental price, at most ${fmtChf(rate.deposit_chf)}, paid back on return.`),
     ] : message("warning", "There is no price for this kind of bike yet."),
     bike.status !== "available"
       ? message("warning", `This bike is in ${bike.status} and cannot be booked right now.`) : null,

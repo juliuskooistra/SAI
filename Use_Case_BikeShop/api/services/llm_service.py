@@ -17,13 +17,13 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from ..config import ASSISTANT_MODEL, ASSISTANT_PROVIDER, MLMP_MODEL
-from ..services.inference_service import InferenceService
+from ..config import ASSISTANT_MODEL, ASSISTANT_PROVIDER
+from .inference_service import InferenceService
 
 # name: (dialect, server address, name of the key in .env, default model)
 # Model names change often. If one stops working, set ASSISTANT_MODEL=... in .env.
 PROVIDERS = {
-    "bfh":       ("openai", None, None, MLMP_MODEL),  # settings from MLMP_* (SPEC §8.1)
+    "bfh":       ("openai", None, None, None),  # client AND model from InferenceService (MLMP_*, SPEC §8.1)
     "anthropic": ("anthropic", None, "ANTHROPIC_API_KEY", "claude-sonnet-5-5"),
     "openai":    ("openai", None, "OPENAI_API_KEY", "gpt-5-mini"),
     "gemini":    ("openai", "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -34,6 +34,12 @@ PROVIDERS = {
 }
 
 BUSY_MESSAGE = "The assistant is busy, try again in a minute."
+
+
+class NotConfigured(Exception):
+    """The AI can't be set up: unknown provider, missing key or model, package not installed.
+    str() says what to fix in .env. Not an AIError, so it never reaches a customer as an answer:
+    the terminal scripts print it and stop, and in the worker the job fails."""
 
 
 class AIError(Exception):
@@ -57,7 +63,8 @@ def _readable(sdk, error, model):
     if isinstance(error, (sdk.AuthenticationError, sdk.PermissionDeniedError)):
         return AIError("The AI service refused the key. Check the key in .env (MLMP keys expire after 180 days).")
     if isinstance(error, sdk.NotFoundError):
-        return AIError(f"The AI service doesn't know the model '{model}'. Set ASSISTANT_MODEL=... in .env.")
+        return AIError(f"The AI service doesn't know the model '{model}'. Set MLMP_MODEL=... in .env (BFH) "
+                       "or ASSISTANT_MODEL=... (other providers).")
     return None
 
 
@@ -84,8 +91,8 @@ class AnthropicChat:
         try:
             import anthropic
         except ImportError:
-            raise SystemExit("ASSISTANT_PROVIDER=anthropic needs the anthropic package: "
-                             "uv pip install anthropic")
+            raise NotConfigured("ASSISTANT_PROVIDER=anthropic needs the anthropic package: "
+                                "uv pip install anthropic")
         self.anthropic = anthropic
         self.client = anthropic.Anthropic(api_key=key)
         self.model, self.system, self.tools = model, system, tools  # the menu is already in this format
@@ -161,26 +168,32 @@ def openai_tools(tools):
 # =============================================================================
 
 def connect(system, tools, provider=ASSISTANT_PROVIDER):
+    """The chat object for `provider`, with .ask(), .provider and .model.
+    Raises NotConfigured if .env is missing something; prints nothing."""
     if provider not in PROVIDERS:
-        raise SystemExit(f"Unknown ASSISTANT_PROVIDER '{provider}' in .env. Choose one of: {', '.join(PROVIDERS)}")
+        raise NotConfigured(f"Unknown ASSISTANT_PROVIDER '{provider}' in .env. Choose one of: {', '.join(PROVIDERS)}")
     dialect, base_url, key_name, default_model = PROVIDERS[provider]
-    model = ASSISTANT_MODEL or default_model
-    if not model:
-        raise SystemExit("Set ASSISTANT_MODEL=... in your .env file.")
 
     if provider == "bfh":
+        # Client and model both come from InferenceService, so the assistant uses exactly
+        # the model /health checks. ASSISTANT_MODEL is ignored here (SPEC §13.2).
+        inference = InferenceService()
         try:
-            chat = OpenAIChat(InferenceService().get_client(), model, system, tools)
+            client = inference.get_client()
         except RuntimeError as e:
-            raise SystemExit(str(e))
+            raise NotConfigured(str(e))
+        chat = OpenAIChat(client, inference.model, system, tools)
     else:
+        model = ASSISTANT_MODEL or default_model
+        if not model:
+            raise NotConfigured("Set ASSISTANT_MODEL=... in your .env file.")
         key = os.getenv(key_name) if key_name else None
         if key_name and not key:
-            raise SystemExit(f"ASSISTANT_PROVIDER={provider} needs {key_name}=... in your .env file.")
+            raise NotConfigured(f"ASSISTANT_PROVIDER={provider} needs {key_name}=... in your .env file.")
         if dialect == "anthropic":
             chat = AnthropicChat(model, key, system, tools)
         else:
             import openai
             chat = OpenAIChat(openai.OpenAI(api_key=key or "not-needed", base_url=base_url), model, system, tools)
-    print(f"(Using {provider}, model {model})\n")
+    chat.provider = provider
     return chat

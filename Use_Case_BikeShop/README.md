@@ -85,5 +85,11 @@ throwaway database and a frozen clock, Monday 2 Nov 2026 09:00 Zurich time.
 
 # Deploying
 
-Everything runs with `docker compose` behind nginx on the server; the steps
-are in [DEPLOY.md](DEPLOY.md).
+The demo runs on **Azure Container Apps**, with Litestream keeping the SQLite
+database in Azure Blob Storage (SPEC §10.2). Every merge to `main` deploys
+through GitHub Actions: tests, image `bikeshop:<commit>`, staging, then
+production after the lecturer's approval (SPEC §10.4). Setting it up, and
+deploying by hand: [DEPLOY-azure.md](DEPLOY-azure.md). Costs: [COSTS.md](COSTS.md).
+
+The alternative, Docker Compose behind nginx on your own VM (SPEC §10.1), is
+in [DEPLOY.md](DEPLOY.md).

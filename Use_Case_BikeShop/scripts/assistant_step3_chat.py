@@ -19,8 +19,8 @@ from sqlmodel import Session, select
 from api.database import engine, init_database
 from api.models.models import User
 from api.tools.assistant_tools import TOOLS, system_prompt
-from api.tools.chat import chat_turn   # the loop itself: one turn, also used by the website
-from api.tools.llm import connect
+from api.services.chat_service import chat_turn   # the loop itself: one turn, also used by the website
+from api.services.llm_service import NotConfigured, connect
 
 
 def signed_in_customer(db: Session, username: str) -> str:
@@ -39,7 +39,11 @@ def main() -> None:
     init_database()
     with Session(engine) as db:
         user_id = signed_in_customer(db, args.user)
-        ai = connect(system_prompt(), TOOLS)
+        try:
+            ai = connect(system_prompt(), TOOLS)
+        except NotConfigured as e:   # something missing in .env: say what, and stop
+            raise SystemExit(str(e))
+        print(f"(Using {ai.provider}, model {ai.model})\n")
         messages = []
         print("BikeShop assistant. Type 'quit' to stop.\n")
 

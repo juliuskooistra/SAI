@@ -113,11 +113,13 @@ Use_Case_BikeShop/              (in github.com/juliuskooistra/SAI)
 │   │   ├── pricing_service.py   ✚ pure functions, no DB
 │   │   ├── rental_service.py    ✚
 │   │   ├── order_service.py     ✚
-│   │   └── inference_service.py ✚ BFH inference client + ping (§8.1)
-│   ├── tools/                   ✚ the colleague's assistant tools (§13)
-│   │   ├── assistant_tools.py   the five tools, their menu, run_tool()
-│   │   ├── demand.py            features, weather and model file for demand_forecast
-│   │   └── llm.py               the connection to the AI: BFH by default, or another provider
+│   │   ├── inference_service.py ✚ BFH inference client + ping (§8.1)
+│   │   ├── llm_service.py       ✚ the connection to the AI: BFH by default, or another provider (§13.2)
+│   │   ├── chat_service.py      ✚ one chat turn (the tool loop) + the assistant_reply job (§13.3, §13.8)
+│   │   └── guard_service.py     ✚ the prompt-injection guard, copied from kooistra-pii (§13.8)
+│   ├── tools/                   ✚ the colleague's assistant tools: only what the AI can call (§13)
+│   │   ├── assistant_tools.py   the five tools, their menu, run_tool(), the system prompt
+│   │   └── demand.py            features, weather and model file for demand_forecast
 │   └── data/                    ✚ SQLite file and the demand model live here (Docker volume, gitignored)
 ├── scripts/                     ✚ (≙ CreditScorer/scripts)
 │   ├── seed.py                  demo inventory, price list, demo accounts
@@ -220,7 +222,7 @@ The price list: one row per category.
 | `category` | enum PK | |
 | `hourly_chf` | Decimal | > 0 |
 | `daily_chf` | Decimal | > 0, ≤ 24 × hourly |
-| `deposit_chf` | Decimal | ≥ 0, informational: taken and returned at the counter |
+| `deposit_chf` | Decimal | ≥ 0, the **most** the deposit can be (§5.3); informational: taken and returned at the counter |
 | `updated_at` | datetime | |
 
 ### Rental
@@ -342,6 +344,13 @@ The daily rate caps every 24-hour block. Examples, with city bike = 8/h and
 | 5 h | 35.00 (capped) |
 | 26 h | 35 + 16 = 51.00 |
 | 3 days | 105.00 |
+
+**Deposit** = min(2 × price, the category's `deposit_chf`), taken at
+pick-up and paid back on return (informational: the shop handles it at the
+counter). Short rentals get a small deposit, and long ones stop at the cap,
+which reflects what the bike is worth. With a city cap of 100: 3 h → 48.00,
+26 h → 100.00 (2 × 51 = 102, capped). It is part of every quote
+(`pricing_service.deposit()`).
 
 - **Quote and booking** use the price list at that moment. The booking
   stores the rates (`hourly_chf`, `daily_chf`) and the price
@@ -713,7 +722,7 @@ Nothing here is LLM code.
    clear "busy, try again" on 429 instead of failing. MLMP runs best-effort with no SLA; status:
    <https://kuma.monitor.ti.bfh.ch/status/mlmp-inference>.
 7. **Slow LLM work goes through the queue** (§5.8): register a handler for
-   `llm_task` in `api/tools/` (or a new kind), enqueue it from an endpoint,
+   `llm_task` in `api/services/` (or a new kind), enqueue it from an endpoint,
    and let the frontend poll `GET /api/jobs/{id}` for the result. The single
    worker runs one job at a time, which also keeps MLMP's limit of 2
    concurrent requests. Until a handler exists, `llm_task` jobs fail with
@@ -1087,6 +1096,16 @@ Files: `services/pricing_service.py`, `router/bike_router.py`
   **then** 422.
 - **Given** a booking quoted at 35.00, **when** staff raises the city daily
   rate to 40, **then** the booking still shows 35.00.
+- **Given** city = 8/35 with a deposit cap of 100, **when** a 3 h rental is
+  quoted (API or the `quote_rental` tool), **then** total 24.00 and deposit
+  48.00; for 26 h, total 51.00 and deposit 100.00 (capped).
+- **Given** staff set the city cap to 60 (`set_rental_rate`), **then** a
+  50 h quote (2 × 86 = 172) has deposit 60.00. The bike page says "twice the rental price,
+  at most CHF <cap>", and the quote shows the amount.
+  Files (deposit): `services/pricing_service.py`, `services/inventory_service.py`,
+  `router/rental_router.py`, `models/models.py`, `services/notification_service.py`,
+  `scripts/seed.py`, `frontend/js/pages/bike.js`, `frontend/js/pages/staff-prices.js`,
+  `api/tools/assistant_tools.py`, `tests/conftest.py`.
 
 ### S5 Availability, quotes, bookings
 Files: `router/rental_router.py`, `services/rental_service.py`,
@@ -1397,7 +1416,7 @@ Christmas 2025), `tests/test_s23_history.py`.
   **then** they see a full year.
 
 ### S24 Assistant tools (§13)
-Files: `api/tools/*`, `scripts/train_demand_model.py`,
+Files: `api/tools/*`, `api/services/llm_service.py`, `scripts/train_demand_model.py`,
 `scripts/assistant_step1_without_ai.py`, `scripts/assistant_step2_see_the_request.py`,
 `scripts/assistant_step3_chat.py`, `api/config.py`, `.env.example`,
 `requirements.in`, `ASSISTANT.md`, `MAP.md`.
@@ -1427,13 +1446,32 @@ Files: `api/tools/*`, `scripts/train_demand_model.py`,
 - **Given** `book_rental` books a bike, **then** one `booking` event exists
   with that bike and `channel = assistant`; `quote_rental` records a `quote`
   the same way.
+- **Given** the clock at Wednesday 4 Nov 2026, **then** the system prompt
+  names today as "Wednesday 2026-11-04", tomorrow as "Thursday 2026-11-05",
+  and lists the next 14 days each with its weekday, so the AI never has to
+  work out a weekday itself. **Given** a tool result with times, **then**
+  each time also comes as a readable day (`start_day`, `end_day`, e.g.
+  "Thursday 5 November 2026, 10:00"); `demand_forecast` already has `weekday`.
+- **Given** `ASSISTANT_MODEL=claude-sonnet-5-5` and provider `bfh`, **when**
+  `connect()` runs, **then** the model is `MLMP_MODEL`; for `openai`, it is
+  `ASSISTANT_MODEL`.
+- **Given** an unknown provider, a missing key, or BFH not configured,
+  **when** `connect()` runs, **then** it raises `NotConfigured` with the
+  sentence (no `SystemExit`, nothing printed); **given** that in the
+  worker, **then** the `assistant_reply` job is `failed`.
+- **Given** `api/tools/`, **then** it holds only what the AI can call
+  (`assistant_tools.py`, `demand.py`); the connection, the chat loop and the
+  guard are services (`api/services/llm_service.py`, `chat_service.py`,
+  `guard_service.py`), and the scripts, the worker and the tests import them
+  from there.
 - **Manual**: with `MLMP_API_KEY` set and the seeded database, step 3 answers
   "Is an e-bike free next Saturday from 10 to 14, and what does it cost?" by
   calling `check_availability` and giving the price from the tool result.
+  Asked on a Wednesday for "tomorrow", it says Thursday.
 
 ### S25 The assistant on the website (§13.8)
-Files: `api/router/assistant_router.py`, `api/tools/chat.py`,
-`api/tools/guard.py`, `api/tools/assistant_tools.py` (system prompt),
+Files: `api/router/assistant_router.py`, `api/services/chat_service.py`,
+`api/services/guard_service.py`, `api/tools/assistant_tools.py` (system prompt),
 `api/jobqueue/handlers.py`, `scripts/worker.py`, `scripts/assistant_step3_chat.py`,
 `api/middleware/billing_middleware.py`, `api/config.py`, `api/main.py`,
 `api/tools/demand.py`, `Dockerfile`, `.env.example`,
@@ -1558,10 +1596,31 @@ No open questions. Decided 2026-11-02:
   `demand_forecast` stays, with a model trained on made-up walk-in history;
   this replaces the "no ML in a bike shop" rule (§2). No tool takes a
   person's name: our code, not the AI, decides who the customer is.
+- 2026-11-04: **the deposit is twice the rental price, capped per category**
+  (§5.3). A fixed 100–400 CHF was too high for a two-hour rental; twice the
+  price alone would grow with the rental length until a two-week rental
+  asked for about what the bike is worth. The cap is the price list's
+  existing `deposit_chf`, so no new column.
+- 2026-11-04: **the assistant gets the weekdays spelled out**. Told only
+  "today is Wednesday 4 Nov", the model called 5 Nov a Wednesday too. The
+  system prompt now lists the next 14 days with their weekdays, and tool
+  results name the weekday of every time, so the model copies instead of
+  calculating.
+- 2026-11-04: **BFH's model comes from one place, and `connect()` raises.**
+  `ASSISTANT_MODEL` used to override `MLMP_MODEL` for BFH too, so a model
+  set for the terminal lesson (e.g. a Claude model) went to BFH from the
+  website, which failed every answer while `/health` said `ok`. And
+  `connect()` called `SystemExit`, which suits a script but meant the worker
+  had to catch it so it wouldn't stop; a service raises, the script exits.
+- 2026-11-04: **`api/tools/` holds only what the AI can call.** The
+  connection to the AI, the chat loop and the prompt guard are not tools:
+  they moved to `api/services/` as `llm_service.py`, `chat_service.py` and
+  `guard_service.py`, so students see at a glance which code the AI can
+  reach.
 
 ---
 
-## 13. Assistant tools (`api/tools/`)
+## 13. Assistant tools (`api/tools/`) and the services behind them
 
 The colleague's part (§8): an AI assistant for customers that answers
 through **tools**, Python functions on top of the services. It is a teaching
@@ -1569,6 +1628,12 @@ example of tool calling: students read the tools and run three short scripts
 (§13.6). The idea in one line: **the AI decides when to use a tool and with
 which inputs; our code decides what actually happens.** The AI never runs
 anything itself.
+
+**Tools vs. services.** `api/tools/` holds only what the AI can call: the
+five tools and their menu (`assistant_tools.py`) and the demand model behind
+one of them (`demand.py`). The machinery around them is ordinary service
+code in `api/services/`: the connection to the AI (`llm_service.py`), the
+chat loop (`chat_service.py`) and the prompt guard (`guard_service.py`).
 
 ### 13.1 The five tools (`assistant_tools.py`)
 
@@ -1589,7 +1654,11 @@ endpoint does the same, the tool has its `operation_id` as its name (§6).
   customer has confirmed the summary"; `demand_forecast`: "only when the
   customer wants to walk in without booking").
 - **Times**: inputs are ISO 8601 without offset, read as Zurich time (§4).
-  Outputs are Zurich time with offset, as in the API.
+  Outputs are Zurich time with offset, as in the API, and next to each a
+  readable day with its weekday (`start_day`: "Thursday 5 November 2026,
+  10:00"), so the AI repeats the weekday instead of guessing it.
+- **Deposit**: `quote_rental` returns `deposit_chf` = min(2 × `total_chf`,
+  the category's cap) (§5.3).
 - **Errors are returned, not raised**: a `ShopError` or a wrong input becomes
   `{"error": "<sentence>"}`, with the same sentences as the API (§8.2.2), so
   the AI can read it and offer something else.
@@ -1606,20 +1675,30 @@ endpoint does the same, the tool has its `operation_id` as its name (§6).
   runs for customers over the web, it calls the API with the customer's key
   instead (§8.2.5).
 
-### 13.2 The connection to the AI (`llm.py`)
+### 13.2 The connection to the AI (`services/llm_service.py`)
 
 | setting (`.env`) | value |
 |---|---|
 | `ASSISTANT_PROVIDER` | `bfh` (default) · `anthropic` · `openai` · `gemini` · `mistral` · `ollama` · `other` |
-| `ASSISTANT_MODEL` | optional; default per provider. For `bfh` it is `MLMP_MODEL` (§8.1) |
+| `ASSISTANT_MODEL` | optional; default per provider. **Not for `bfh`**: BFH always uses `MLMP_MODEL` (§8.1), the model `/health` checks |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY` | only the one for the chosen provider |
 | `ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY` | for `other` (any OpenAI-compatible service) |
 
-- `bfh` uses `InferenceService.get_client()` (§8.1), so no second copy of the
-  MLMP settings. The model must support tool calling; `gpt-oss:120b` does.
+- `bfh` uses `InferenceService` (§8.1) for the client **and the model**,
+  so no second copy of the MLMP settings: the model the assistant calls is
+  the model `/health` checks. `ASSISTANT_MODEL` is ignored for `bfh`, so a
+  model chosen for another provider in the terminal lesson never reaches
+  BFH, and the website (always `bfh`) can't be pointed at a model BFH lacks.
+- **`connect()` raises, it doesn't exit or print.** A set-up problem
+  (unknown provider, missing key or model, `anthropic` not installed, BFH
+  not configured) raises `NotConfigured` with a sentence saying what to fix.
+  It is not an `AIError`, so it never reaches a customer as an answer. The
+  terminal scripts turn it into that sentence and exit, and print which
+  provider and model they use (`ai.provider`, `ai.model`). In the worker
+  the `assistant_reply` job fails. The model must support tool calling; `gpt-oss:120b` does.
   BFH's embedding, speech and reranker models can't run the assistant.
 - There are two dialects of tool calling: Anthropic's (Claude) and OpenAI's
-  (BFH, ChatGPT, Gemini, Mistral, Ollama). `llm.py` translates both into
+  (BFH, ChatGPT, Gemini, Mistral, Ollama). `llm_service.py` translates both into
   `reply.text` and `reply.tool_calls`, so the tools and the chat loop are the
   same for every AI. The menu is written once, in Anthropic format, and
   rewrapped for OpenAI.
@@ -1638,8 +1717,12 @@ endpoint does the same, the tool has its `operation_id` as its name (§6).
 - The loop: send the conversation and the menu to the AI; while it asks for
   tools, run them and send the results back; then show its answer. Every
   tool call and result is printed as `[TOOL CALL]` / `[RESULT]`.
+- The loop itself is `chat_turn()` in `api/services/chat_service.py`,
+  shared with the website (§13.8).
 - The system prompt holds the shop's name, today's date and time in Zurich,
-  the opening hours (from `config.py`), and the rules: use the tools for
+  **a calendar of the next 14 days with their weekdays** (today, tomorrow,
+  then each date; models are bad at working out weekdays), the opening
+  hours (from `config.py`), and the rules: use the tools for
   availability and prices and never invent numbers; summarise and ask for
   confirmation before `book_rental`; don't ask for names, emails or other
   personal data (MLMP rule, §8.2.6).
@@ -1725,7 +1808,7 @@ website's *Assistant* page (`#/assistant`) for every signed-in user.
 - **No AI call inside the request** (§5.8): the endpoint checks the input,
   then enqueues an `assistant_reply` job with the conversation and the
   signed-in user's id, and answers `{job_id}`. The worker runs one chat turn
-  (`api/tools/chat.py`: the tools as often as the AI asks, then its answer)
+  (`api/services/chat_service.py`: the tools as often as the AI asks, then its answer)
   and stores `{text, tools}` as the job's result: the answer, and the names
   of the tools it used, which the page shows under the answer. The page
   polls `GET /api/jobs/{id}` every 2 s, for at most 90 s.
@@ -1764,7 +1847,7 @@ from cheapest to strongest:
    server only. The request accepts only `user` and `assistant` messages
    (no `system`, no `tool`), at most 20 messages of at most 2,000 characters,
    and the newest one must be from the user.
-2. **Screening**: `api/tools/guard.py`, copied from `kooistra-pii`'s
+2. **Screening**: `api/services/guard_service.py`, copied from `kooistra-pii`'s
    `PromptGuard` (tag v0.14.0), scans every message in the request for known
    injection phrasings ("ignore previous instructions", "reveal your system
    prompt", role markers like `system:` or `<|im_start|>`, "developer

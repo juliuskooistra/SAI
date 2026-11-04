@@ -20,8 +20,8 @@ from ..database import engine
 from ..jobqueue import queue
 from ..jobqueue.handlers import register
 from ..models.models import User
-from .assistant_tools import TOOLS, run_tool, system_prompt
-from .llm import AIError, Reply, connect
+from ..tools.assistant_tools import TOOLS, run_tool, system_prompt
+from .llm_service import AIError, Reply, connect
 
 log = logging.getLogger("bikeshop.assistant")
 
@@ -130,10 +130,9 @@ def assistant_reply(payload: dict) -> dict:
     {"messages": [{"role": "user"|"assistant", "content": "..."}], "user_id": "..."}.
     Result: {"text": the answer, "tools": names of the tools it used}.
     """
-    try:
-        ai = connect(system_prompt(), web_tools(), provider="bfh")   # the website always uses BFH
-    except SystemExit as e:   # connect() exits for the terminal; that would stop the worker
-        raise RuntimeError(str(e)) from None
+    # The website always uses BFH. If it isn't configured, connect() raises NotConfigured
+    # and the job fails (the API already refuses to enqueue then, SPEC §13.8).
+    ai = connect(system_prompt(), web_tools(), provider="bfh")
     used: list[str] = []
     with Session(engine) as db:
         text = chat_turn(ai, list(payload["messages"]), db, payload["user_id"],

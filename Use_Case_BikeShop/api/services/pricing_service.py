@@ -4,6 +4,7 @@ Rental pricing (SPEC §5.3). Pure functions: no database, no clock.
     hours = ceil(duration in hours)          # every started hour counts
     days, rest = divmod(hours, 24)
     price = days x daily + min(rest x hourly, daily)
+    deposit = min(DEPOSIT_FACTOR x price, the category's cap)
 """
 import math
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from ..config import MONEY_PLACES, MIN_RENTAL_HOURS
 from .errors import InvalidInput
+
+DEPOSIT_FACTOR = 2   # the deposit is twice the rental price, at most the category's cap (SPEC §5.3)
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,12 @@ def rental_price(start: datetime, end: datetime, hourly_chf: Decimal, daily_chf:
     full_days, rest_hours = divmod(hours, 24)
     total = full_days * Decimal(daily_chf) + min(rest_hours * Decimal(hourly_chf), Decimal(daily_chf))
     return PriceBreakdown(hours=hours, full_days=full_days, rest_hours=rest_hours, total_chf=money(total))
+
+
+def deposit(total_chf: Decimal, cap_chf: Decimal) -> Decimal:
+    """Twice the rental price, but never more than the category's cap: short rentals get a
+    small deposit, long ones stop at what the bike is worth (SPEC §5.3)."""
+    return money(min(DEPOSIT_FACTOR * Decimal(total_chf), Decimal(cap_chf)))
 
 
 def validate_rate(hourly_chf: Decimal, daily_chf: Decimal) -> None:

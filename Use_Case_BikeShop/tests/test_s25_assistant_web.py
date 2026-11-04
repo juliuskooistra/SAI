@@ -11,10 +11,10 @@ from api.database import engine
 from api.jobqueue import queue
 from api.models.models import Job, Rental, User
 from api.services.inference_service import InferenceService
-from api.tools import chat
+from api.services import chat_service as chat
 from api.tools.assistant_tools import system_prompt
-from api.tools.guard import STANDALONE_PREAMBLE
-from api.tools.llm import BUSY_MESSAGE, Busy, Reply, ToolCall
+from api.services.guard_service import STANDALONE_PREAMBLE
+from api.services.llm_service import BUSY_MESSAGE, Busy, Reply, ToolCall
 from scripts import worker
 
 from .conftest import SAT, auth, make_user
@@ -232,3 +232,15 @@ def test_a_crash_fails_the_job_after_one_attempt(client, db, shop, configured, f
     db.expire_all()
     job = db.get(Job, job_id)
     assert job.status == "failed" and job.attempts == 1
+
+
+def test_bfh_not_configured_in_the_worker_fails_the_job(client, db, shop, configured, monkeypatch):
+    from api.services.llm_service import NotConfigured
+    job_id = ask(client, shop).json()["job_id"]   # enqueued while BFH looked configured
+
+    def not_configured(system, tools, provider):
+        raise NotConfigured("BFH inference is not configured")
+    monkeypatch.setattr(chat, "connect", not_configured)
+    assert run_worker_once() == "failed"
+    db.expire_all()
+    assert db.get(Job, job_id).status == "failed"
