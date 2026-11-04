@@ -26,10 +26,11 @@ from ..config import HOLIDAYS, MAX_DAYS_AHEAD, MIN_RENTAL_HOURS, OPENING_HOURS, 
 from ..models.models import Bike, Category
 from ..services import analytics_service
 from ..services.errors import RuleViolation, ShopError
+from ..services.pricing_service import deposit
 from ..services.rental_service import WEEKDAYS, RentalService
 from ..timeutils import to_local, to_utc, utcnow
 from . import demand
-from .guard import STANDALONE_PREAMBLE
+from ..services.guard_service import STANDALONE_PREAMBLE
 
 rentals = RentalService()
 _tickets = []  # staff tickets created while the script runs
@@ -61,6 +62,19 @@ def _local(value: datetime) -> str:
     return to_local(value).isoformat()
 
 
+def _day(value: datetime) -> str:
+    """'Thursday 5 November 2026, 10:00' (Zurich time). The AI copies the weekday
+    from here instead of working it out, which models often get wrong."""
+    local = to_local(value)
+    return f"{local:%A} {local.day} {local:%B %Y, %H:%M}"
+
+
+def _period(start: datetime, end: datetime) -> dict:
+    """A period as the tools return it: ISO times plus readable days with weekdays."""
+    return {"start_at": _local(start), "start_day": _day(start),
+            "end_at": _local(end), "end_day": _day(end)}
+
+
 def _bike(bike: Bike) -> dict:
     return {"bike_id": bike.id, "code": bike.code, "name": bike.name,
             "category": bike.category.value, "frame_size": bike.frame_size.value}
@@ -75,7 +89,7 @@ def check_availability(db: Session, start_at: str, end_at: str, category: str | 
     """Rental bikes free for the whole period, each with its price."""
     start, end = _time(start_at, "start_at"), _time(end_at, "end_at")
     found = rentals.available_bikes(db, start, end, _category(category) if category else None)
-    result = {"start_at": _local(start), "end_at": _local(end), "available": len(found),
+    result = {**_period(start, end), "available": len(found),
               "bikes": [{**_bike(bike), "price_chf": str(price.total_chf)} for bike, _, price in found]}
     if not found:
         result["note"] = "No bike of this kind is free for the whole period. Suggest another time or category."
@@ -88,12 +102,12 @@ def quote_rental(db: Session, bike_id: int, start_at: str, end_at: str) -> dict:
     start, end = _time(start_at, "start_at"), _time(end_at, "end_at")
     bike, rate, price = rentals.quote(db, int(bike_id), start, end)
     analytics_service.record(db, "quote", bike.id, channel="assistant")   # as the API does (SPEC §5.10)
-    return {**_bike(bike), "start_at": _local(start), "end_at": _local(end),
+    return {**_bike(bike), **_period(start, end),
             "billable_hours": price.hours, "full_days": price.full_days, "rest_hours": price.rest_hours,
             "hourly_chf": str(rate.hourly_chf), "daily_chf": str(rate.daily_chf),
-            "total_chf": str(price.total_chf), "deposit_chf": str(rate.deposit_chf),
-            "note": "Every started hour counts; the daily rate caps each 24 hours. The deposit is paid "
-                    "and returned at the counter. This is a quote only: it books nothing and does not "
+            "total_chf": str(price.total_chf), "deposit_chf": str(deposit(price.total_chf, rate.deposit_chf)),
+            "note": "Every started hour counts; the daily rate caps each 24 hours. The deposit is twice "
+                    "the price (at most a fixed amount per category), paid at pick-up and returned at the counter. This is a quote only: it books nothing and does not "
                     "check availability."}
 
 
@@ -103,7 +117,7 @@ def book_rental(db: Session, user_id: str, bike_id: int, start_at: str, end_at: 
     rental = rentals.book(db, user_id, int(bike_id), _time(start_at, "start_at"), _time(end_at, "end_at"))
     analytics_service.record(db, "booking", rental.bike_id, channel="assistant")   # anonymous: no user id
     return {"status": "booked", "rental_id": rental.id, **_bike(db.get(Bike, rental.bike_id)),
-            "start_at": _local(rental.start_at), "end_at": _local(rental.end_at),
+            **_period(rental.start_at, rental.end_at),
             "quoted_price_chf": str(rental.quoted_price_chf),
             "next_step": "Pick the bike up at the shop at the start time; pay there."}
 
@@ -190,7 +204,7 @@ def demand_forecast(db: Session, category: str, date: str) -> dict:
 # =============================================================================
 # PART 2: THE TOOL DESCRIPTIONS (the "menu" the AI reads)
 # Format: Anthropic / Claude API. Each tool = name + description + input_schema.
-# For OpenAI-style AIs (BFH, ChatGPT, Gemini, ...) llm.py rewraps this same menu.
+# For OpenAI-style AIs (BFH, ChatGPT, Gemini, ...) services/llm_service.py rewraps this same menu.
 # Tip: the description is a small prompt. Say WHAT it does and WHEN to use it.
 # =============================================================================
 
@@ -308,9 +322,16 @@ def system_prompt() -> str:
     """The instructions the chat sends with every request (SPEC §13.3), with the
     guard's preamble: customer text and tool results are data (§13.8, layer 3)."""
     now = to_local(utcnow())
+    # Spell out the weekdays: told only "today is Wednesday 4 Nov", models call
+    # 5 Nov a Wednesday too (SPEC §13.3). They copy from this list instead.
+    days = [now.date() + timedelta(days=n) for n in range(14)]
+    calendar = "\n".join(f"- {d:%A} {d.isoformat()}" + (" (today)" if n == 0 else " (tomorrow)" if n == 1 else "")
+                         for n, d in enumerate(days))
     hours = "; ".join(f"{WEEKDAYS[d]} {o:%H:%M}-{c:%H:%M}" for d, (o, c) in sorted(OPENING_HOURS.items()))
     return f"""You are the friendly assistant of BikeShop, a bike shop in Bern that rents and sells bikes.
 Now is {now:%A, %Y-%m-%d %H:%M} (Zurich time).
+The next 14 days (use this list for weekdays and dates; never work out a weekday yourself):
+{calendar}
 Opening hours: {hours}. Closed on Sundays and public holidays.
 Pick-up and return must be within opening hours, on the quarter hour.
 Use the tools for availability, prices and bookings. Never invent bikes, prices or times.

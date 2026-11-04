@@ -8,7 +8,7 @@ error and retries the job later.
 Registered here: `send_email` (SPEC §5.9).
 
 Registered elsewhere: `assistant_reply`, one answer of the website's AI
-assistant, in `api/tools/chat.py` (SPEC §13.8); `scripts/worker.py` imports
+assistant, in `api/services/chat_service.py` (SPEC §13.8); `scripts/worker.py` imports
 that module so the handler exists. A kind without a handler fails at once
 with "No handler for job kind '…'".
 """

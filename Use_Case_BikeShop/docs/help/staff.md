@@ -31,8 +31,8 @@ of each kind are available, out, in maintenance or reserved.
 
 ## Prices
 
-The rental price list: an hourly rate, a daily rate and a deposit for each
-category. A change applies to new quotes at once; existing bookings keep the
+The rental price list: an hourly rate, a daily rate and a deposit cap for each
+category. The deposit is twice the rental price, but never more than the cap. A change applies to new quotes at once; existing bookings keep the
 price they were quoted.
 
 ## Orders

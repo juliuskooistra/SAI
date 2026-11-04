@@ -14,8 +14,9 @@ from sqlmodel import Session, select
 
 from .. import config
 from ..jobqueue import queue
-from ..models.models import Bike, Order, Rental, User
+from ..models.models import Bike, Order, Rental, RentalRate, User
 from ..timeutils import format_local
+from .pricing_service import deposit
 
 log = logging.getLogger("bikeshop.notifications")
 
@@ -44,13 +45,15 @@ class NotificationService:
 
     def booking_confirmed(self, db: Session, rental: Rental) -> Optional[int]:
         bike = db.get(Bike, rental.bike_id)
+        rate = db.get(RentalRate, bike.category)
+        amount = deposit(rental.quoted_price_chf, rate.deposit_chf) if rate else 2 * rental.quoted_price_chf
         return self._enqueue(
             db, rental.user_id, f"Booking confirmed: {bike.name} on {format_local(rental.start_at)}",
             [f"Your booking of {bike.name} ({bike.code}) is confirmed.",
              f"Pick-up: {format_local(rental.start_at)}",
              f"Return: {format_local(rental.end_at)}",
              f"Price: CHF {rental.quoted_price_chf:.2f}, paid in the shop. "
-             f"The deposit is taken and returned at the counter."],
+             f"The deposit, CHF {amount:.2f}, is taken and returned at the counter."],
             "See your bookings")
 
     def bike_reserved(self, db: Session, order: Order) -> Optional[int]:

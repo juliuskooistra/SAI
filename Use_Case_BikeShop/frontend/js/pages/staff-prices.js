@@ -37,7 +37,7 @@ export async function render(view, { flash }) {
     const rate = rateOf[category];
     const hourly = moneyInput(rate?.hourly_chf, `${category} per hour`);
     const daily = moneyInput(rate?.daily_chf, `${category} per day`);
-    const deposit = moneyInput(rate?.deposit_chf, `${category} deposit`);
+    const deposit = moneyInput(rate?.deposit_chf, `${category} deposit cap`);
     const save = el("button", { type: "button", class: "primary" }, "Save");
     save.addEventListener("click", async () => {
       if ([hourly, daily, deposit].some((input) => input.value === "")) {
@@ -49,7 +49,7 @@ export async function render(view, { flash }) {
       }));
       if (saved) {
         show(notice, message("success", `Saved ${category}: ${fmtChf(saved.hourly_chf)}/h, `
-          + `${fmtChf(saved.daily_chf)}/day, deposit ${fmtChf(saved.deposit_chf)}.`));
+          + `${fmtChf(saved.daily_chf)}/day, deposit at most ${fmtChf(saved.deposit_chf)}.`));
       }
     });
     return { category: rate ? category : `${category} (no price yet)`, hourly, daily, deposit, save };
@@ -59,7 +59,7 @@ export async function render(view, { flash }) {
     { label: "Category", value: (r) => r.category },
     { label: "Per hour (CHF)", value: (r) => r.hourly },
     { label: "Per day (CHF)", value: (r) => r.daily },
-    { label: "Deposit (CHF)", value: (r) => r.deposit },
+    { label: "Deposit cap (CHF)", value: (r) => r.deposit },   // deposit = 2 x price, at most this
     { label: "", value: (r) => r.save },
   ], rows));
 }

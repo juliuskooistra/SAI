@@ -291,7 +291,8 @@ class RentalRateResponse(LocalTimes):
     category: Category
     hourly_chf: Decimal = PField(description="Price per started hour, CHF", examples=["8.00"])
     daily_chf: Decimal = PField(description="Cap per 24 hours, CHF", examples=["35.00"])
-    deposit_chf: Decimal = PField(description="Deposit taken and returned at the counter, CHF", examples=["100.00"])
+    deposit_chf: Decimal = PField(description="The most the deposit can be, CHF: twice the rental price, "
+                                              "capped at this", examples=["100.00"])
 
 
 class BikeResponse(LocalTimes):
@@ -356,7 +357,8 @@ class BikeUpdateRequest(BaseModel):
 class RentalRateRequest(BaseModel):
     hourly_chf: Decimal = PField(gt=0, max_digits=10, decimal_places=2, examples=["8.00"])
     daily_chf: Decimal = PField(gt=0, max_digits=10, decimal_places=2, examples=["35.00"])
-    deposit_chf: Decimal = PField(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2, examples=["100.00"])
+    deposit_chf: Decimal = PField(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2, examples=["100.00"],
+                                  description="Deposit cap, CHF: the deposit is twice the price, at most this")
 
 
 class OpeningDay(BaseModel):
@@ -396,7 +398,8 @@ class QuoteResponse(LocalTimes):
     hourly_chf: Decimal
     daily_chf: Decimal
     total_chf: Decimal = PField(description="full_days x daily + min(rest_hours x hourly, daily)")
-    deposit_chf: Decimal
+    deposit_chf: Decimal = PField(description="min(2 x total_chf, the category's cap), taken at pick-up "
+                                              "and paid back on return")
 
 
 class AvailableBike(LocalTimes):

@@ -52,8 +52,9 @@ The bike page shows this breakdown as a **quote** while you choose the
 times. Your booking keeps the price you were quoted, even if the shop
 changes its price list later.
 
-The **deposit** shown on the quote is taken in the shop when you collect the
-bike and given back when you return it.
+The **deposit** is twice the rental price, but never more than a fixed amount
+per kind of bike; the quote shows it. It is
+taken in the shop when you collect the bike and given back when you return it.
 
 ## Returning early or late
 

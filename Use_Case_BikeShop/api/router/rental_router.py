@@ -10,6 +10,7 @@ from ..models.models import (
     RentalPeriodRequest, RentalResponse, RentalStatus,
 )
 from ..services import analytics_service
+from ..services.pricing_service import deposit
 from ..services.rental_service import RentalService
 from ..timeutils import to_utc
 
@@ -19,7 +20,7 @@ def quote_response(bike, rate, price, start, end) -> QuoteResponse:
         bike_id=bike.id, category=bike.category, start_at=start, end_at=end,
         hours=price.hours, full_days=price.full_days, rest_hours=price.rest_hours,
         hourly_chf=rate.hourly_chf, daily_chf=rate.daily_chf, total_chf=price.total_chf,
-        deposit_chf=rate.deposit_chf,
+        deposit_chf=deposit(price.total_chf, rate.deposit_chf),
     )
 
 

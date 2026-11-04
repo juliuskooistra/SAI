@@ -4,7 +4,7 @@ STEP 2: Send ONE question plus the tool menu to the AI, and look at what comes b
 The key insight: the AI does NOT answer. It sends back a REQUEST:
 "please run tool X with these inputs". Nothing runs yet; we only print it.
 
-Which AI? Whatever ASSISTANT_PROVIDER says in .env (default: BFH). See api/tools/llm.py.
+Which AI? Whatever ASSISTANT_PROVIDER says in .env (default: BFH). See api/services/llm_service.py.
 
     python -m scripts.assistant_step2_see_the_request
     python -m scripts.assistant_step2_see_the_request "your own question"
@@ -12,11 +12,15 @@ Which AI? Whatever ASSISTANT_PROVIDER says in .env (default: BFH). See api/tools
 import sys
 
 from api.tools.assistant_tools import TOOLS, system_prompt
-from api.tools.llm import AIError, connect
+from api.services.llm_service import AIError, NotConfigured, connect
 
 question = " ".join(sys.argv[1:]) or "Is an e-bike free next Saturday from 10:00 to 14:00?"
 
-ai = connect(system=system_prompt(), tools=TOOLS)                       # <- the menu
+try:
+    ai = connect(system=system_prompt(), tools=TOOLS)                   # <- the menu
+except NotConfigured as e:                                              # something missing in .env
+    raise SystemExit(str(e))
+print(f"(Using {ai.provider}, model {ai.model})\n")
 try:
     reply = ai.ask([{"role": "user", "content": question}])
 except AIError as e:

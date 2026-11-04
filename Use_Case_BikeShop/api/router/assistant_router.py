@@ -9,7 +9,7 @@ the queue, SPEC §5.8): it checks the messages, then enqueues one
 Prompt injection (SPEC §13.8) is handled here in two of its five layers:
   1. only `user` and `assistant` text, at most 20 messages of 2,000
      characters, newest from the user (the request model below);
-  2. every message is scanned for known injection phrasings (guard.py);
+  2. every message is scanned for known injection phrasings (services/guard_service.py);
      a hit is refused without calling the AI.
 """
 import logging
@@ -23,7 +23,7 @@ from ..database import get_db
 from ..jobqueue import queue
 from ..services.errors import Unavailable
 from ..services.inference_service import InferenceService
-from ..tools.guard import PromptGuard
+from ..services.guard_service import PromptGuard
 
 log = logging.getLogger("bikeshop.assistant")
 

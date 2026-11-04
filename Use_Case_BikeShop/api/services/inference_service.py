@@ -1,9 +1,10 @@
 """
 Connection to BFH inference (MLMP), SPEC §8.1.
 
-We only build the connection: a configured client for the colleague's LLM
-tools, and a check that the endpoint is reachable. Nothing in the shop calls
-the model yet. The key is never logged or returned.
+The BFH-specific part: a configured client, and a check that the endpoint is
+reachable (for /health). llm_service.py uses get_client() when the provider
+is "bfh" and adds the tool-calling dialects on top. The key is never logged
+or returned.
 """
 import time
 
