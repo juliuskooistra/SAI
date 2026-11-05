@@ -179,9 +179,11 @@ new version while the old one still runs, and for a minute or two both copy
 the database to the same place in Blob Storage. That can break the copy for
 good: the next start fails in `litestream restore` and the app stays down
 (it happened to staging on 2026-11-04, SPEC §10.2). `release.sh` (through
-`update.sh`) stops the old version first, waits until it is gone, then
-starts the new one and waits for `/health`. The app is away for about a
-minute. The same goes for any setting that restarts the app: use
+`update.sh`) stops the whole app first and waits until nothing runs, makes
+the new version while the app is stopped, then starts the app and waits for
+`/health`. The app is away for about a minute. If something goes wrong in
+between, the script starts the app again, so it is never left stopped. If you
+ever see an app stopped (portal: *Overview*, status *Stopped*), press *Start*. The same goes for any setting that restarts the app: use
 `deploy/azure/update.sh <app> --set-env-vars …`. `az containerapp secret set`
 doesn't restart it and needs no script.
 
