@@ -926,6 +926,11 @@ browser ─HTTPS─► bikeshop (one container app, 0–1 instances)
   image, its own data: `LITESTREAM_PATH=bikeshop-staging` (production uses
   the default `bikeshop`; two apps on one path would overwrite each other's
   database), fresh seed data, no Mailgun key (emails go to the log).
+  Since 2026-11-05 our staging uses `bikeshop-staging-v2`: the copy at
+  `bikeshop-staging` was broken by two writers (see "One writer" below) and
+  was rebuilt from its last good point (4 Nov 09:53) at the new path. A
+  broken copy is never repaired in place: restore the last good point
+  elsewhere, check it, and point the app at a new path.
   **Release flow**: push image `:N` → update staging to `:N` → check
   (`/health`, a booking) → update production to the same `:N`. Production only
   ever gets an image that ran on staging; rollback is updating back to
@@ -953,10 +958,19 @@ browser ─HTTPS─► bikeshop (one container app, 0–1 instances)
 - **The worker only runs while the app is awake.** When the app wakes
   up, the worker's start-up run makes up for the expiries it missed (§5.7).
   `/health` shows when it last ran.
+- **One writer per database copy, always.** Every change that makes a new
+  revision (a new image, an environment variable) would by default start the
+  new revision while the old one still runs. Then two Litestream processes
+  write to the same path for a minute or two, and that can break the copy for
+  good: on 2026-11-04 it did, on staging, and every later start failed in
+  `litestream restore` ("nonsequential page numbers"). So such changes go
+  through `deploy/azure/update.sh`, which first deactivates the running
+  revision and waits until it has stopped (Litestream copies its last changes
+  on SIGTERM), and only then makes the new one. The price is about a minute
+  of downtime per deploy, which the demo accepts. If the old revision can't
+  be stopped, the script makes no change. Only changes that make no
+  revision, such as `az containerapp secret set`, may skip it.
 - **Data loss window**: what was written in the last ~1 s before a crash.
-  During a redeploy Azure starts the new revision before stopping the old
-  one; a write in those few seconds can be lost. For the demo that's
-  acceptable; the runbook says so.
 - **Region**: Switzerland North (data in Switzerland). Storage account and
   apps in the same region.
 - **Secrets** are Container Apps secrets, referenced from environment
@@ -1030,8 +1044,10 @@ repository root, for every push and pull request that touches
 2. **build** (pushes to `main` only, after the tests pass): build the image
    on GitHub's amd64 runner and push it to the registry as
    `bikeshop:<short commit hash>`, so every image traces back to a commit.
-3. **staging**: update `bikeshop-staging` to that image, then wait until its
-   `/health` answers `ok` (it may first have to wake up).
+3. **staging**: update `bikeshop-staging` to that image with
+   `deploy/azure/release.sh` (old revision stopped first, §10.2), then wait
+   until its `/health` answers `ok`. It may first have to wake up and restore
+   its database; the wait ends after 5 minutes in all, each try at most 20 s.
 4. **production**: the same image to `bikeshop`, then the same check. This
    job runs in the GitHub environment `production`, which **waits for the
    lecturer's approval**: production only gets what ran on staging, and
@@ -1049,7 +1065,8 @@ repository root, for every push and pull request that touches
   is secret): `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
   `AZURE_RESOURCE_GROUP`, `ACR_NAME`.
 - **Rollback**: re-run the production job of an earlier successful run, or
-  `az containerapp update --image bikeshop:<earlier hash>`.
+  `deploy/azure/release.sh bikeshop <registry>/bikeshop:<earlier hash>`.
+  Never a plain `az containerapp update` (§10.2, one writer).
 - Manual deploys from a laptop (`DEPLOY-azure.md`) still work, for students
   without the pipeline.
 - **One pipeline only.** The Azure portal's *Continuous deployment* (and
@@ -1651,6 +1668,34 @@ Files: `api/jobqueue/queue.py`, `scripts/worker.py`, `api/services/llm_service.p
   remove the container while the agent works: old data survives and the case
   offers Retry.
 
+### S33 One writer per database copy (§10.2, §10.4)
+Files: `deploy/azure/update.sh` (new), `deploy/azure/release.sh`,
+`DEPLOY-azure.md`, `tests/test_s33_deploy_one_writer.py`.
+
+- **Given** an app with a running revision, **when** `update.sh <app> <args>`
+  runs, **then** it deactivates every active revision and waits until none has
+  a replica, and only then runs `az containerapp update <args>`: at no moment
+  do two revisions run.
+- **Given** a revision that can't be deactivated, or still has a replica after
+  2 minutes, **then** the script stops with a message and the app is not
+  updated.
+- **Given** the same image again (a re-run), **then** a new revision is still
+  made (a unique `--revision-suffix`), so the app doesn't stay stopped.
+- **Given** the update, **then** the script waits for `/health` with
+  `"database":"ok"`, each try at most 20 s and 5 minutes in all, and fails
+  with the app's name if it doesn't come.
+- **Given** `release.sh <app> <image>`, **then** it deploys through
+  `update.sh` and checks that the app runs that image.
+- **Given** `DEPLOY-azure.md`, **then** every command that makes a revision on
+  a running app uses `update.sh` or `release.sh`, not a plain
+  `az containerapp update`.
+- **Tests** (offline): the scripts run against a fake `az` and `curl` that
+  record their calls, so the order deactivate → wait → update → health is
+  checked without Azure.
+- **Manual**, on staging: deploy twice in a row; in the logs, the old
+  revision's `litestream shut down` comes before the new one's `restoring`,
+  and the restore succeeds.
+
 ## 12. Decisions log
 
 No open questions. Decided 2026-11-02:
@@ -1777,6 +1822,13 @@ No open questions. Decided 2026-11-02:
   a customer's assistant answer could wait behind a round of up to 240 s and give
   up after 90 s. A thread in the same worker needs no change to any deployment
   set-up, unlike a second worker process, and BFH's limit of 2 still holds.
+- 2026-11-05: **a deploy stops the old revision before it starts the new one**,
+  at the cost of about a minute of downtime. Azure's default, new before old,
+  let two Litestream processes write one copy at every deploy. On 2026-11-04 that
+  broke staging's copy, and staging stayed down until it was rebuilt from its
+  last good point (§10.2). Rejected: a lock in `start.sh` that makes a second
+  container wait (Azure keeps the old revision until the new one is ready, so
+  they would wait for each other); multiple-revision mode (still two at once).
 
 ---
 

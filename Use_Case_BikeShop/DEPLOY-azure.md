@@ -171,12 +171,25 @@ again.
 ```bash
 az acr login --name $NAME
 docker buildx build --platform linux/amd64 -t $NAME.azurecr.io/bikeshop:2 --push .
-az containerapp update --name bikeshop --resource-group $RG --image $NAME.azurecr.io/bikeshop:2
+AZURE_RESOURCE_GROUP=$RG bash deploy/azure/release.sh bikeshop $NAME.azurecr.io/bikeshop:2
 ```
 
-For a few seconds the old and the new version run side by side; a booking
-made in exactly those seconds can be lost. Fine for a demo, not for a real
-shop: that's when you move to a managed database (see [MAP.md](MAP.md)).
+**Never deploy with a plain `az containerapp update`.** Azure would start the
+new version while the old one still runs, and for a minute or two both copy
+the database to the same place in Blob Storage. That can break the copy for
+good: the next start fails in `litestream restore` and the app stays down
+(it happened to staging on 2026-11-04, SPEC §10.2). `release.sh` (through
+`update.sh`) stops the old version first, waits until it is gone, then
+starts the new one and waits for `/health`. The app is away for about a
+minute. The same goes for any setting that restarts the app: use
+`deploy/azure/update.sh <app> --set-env-vars …`. `az containerapp secret set`
+doesn't restart it and needs no script.
+
+If a copy is broken anyway, don't repair it in place: restore its last good
+point to a file on your laptop (`litestream restore -txid <id> -o …`), check
+it with `sqlite3 … "PRAGMA integrity_check"`, replicate it once to a **new**
+path, and set the app's `LITESTREAM_PATH` to that path with `update.sh`.
+Staging was rebuilt like this and now uses `bikeshop-staging-v2`.
 
 ## A staging copy (needed for the GitHub pipeline)
 
@@ -235,7 +248,7 @@ staff emails one address. Set it on an app that already runs (this restarts
 it):
 
 ```bash
-az containerapp update --name bikeshop --resource-group $RG \
+AZURE_RESOURCE_GROUP=$RG bash deploy/azure/update.sh bikeshop \
   --set-env-vars SHOP_STAFF_EMAIL=<the shop's address>
 ```
 
@@ -245,7 +258,7 @@ a sending key for the `mail.kooistra.ch` domain):
 ```bash
 printf "Mailgun key: "; read -rs MG_KEY; echo
 az containerapp secret set --name bikeshop --resource-group $RG --secrets "mailgun-key=$MG_KEY"
-az containerapp update --name bikeshop --resource-group $RG --set-env-vars MAILGUN_API_KEY=secretref:mailgun-key
+AZURE_RESOURCE_GROUP=$RG bash deploy/azure/update.sh bikeshop --set-env-vars MAILGUN_API_KEY=secretref:mailgun-key
 ```
 
 Without `SHOP_STAFF_EMAIL` the assistant has no hand-off tool and tells
@@ -341,12 +354,12 @@ To use another model, for example if the deployment's key isn't allowed
 `glm-5.3-flash` (this restarts the app, and the model must support tool calls):
 
 ```bash
-az containerapp update --name bikeshop --resource-group $RG --set-env-vars WORKSHOP_MODEL=<model>
+AZURE_RESOURCE_GROUP=$RG bash deploy/azure/update.sh bikeshop --set-env-vars WORKSHOP_MODEL=<model>
 ```
 
 | what you see | cause | fix |
 |---|---|---|
-| "BFH inference is not configured" when you press Analyse | the app has no MLMP key | `printf "MLMP key: "; read -rs MLMP_KEY; echo`, `az containerapp secret set --name <app> --resource-group $RG --secrets "mlmp-key=$MLMP_KEY"`, then `az containerapp update --name <app> --resource-group $RG --set-env-vars MLMP_API_KEY=secretref:mlmp-key` |
+| "BFH inference is not configured" when you press Analyse | the app has no MLMP key | `printf "MLMP key: "; read -rs MLMP_KEY; echo`, `az containerapp secret set --name <app> --resource-group $RG --secrets "mlmp-key=$MLMP_KEY"`, then `AZURE_RESOURCE_GROUP=$RG bash deploy/azure/update.sh <app> --set-env-vars MLMP_API_KEY=secretref:mlmp-key` |
 | the model check prints `False` | this key may not use the model | ask for access, or set `WORKSHOP_MODEL` as above |
 | "The agent stopped" | the app restarted or scaled to zero during a round | press **Retry** |
 | "The AI service took too long to answer" | one model call passed the 240-second limit, most likely the one that writes the brief | press **Retry**: the agent carries on from where it was |
@@ -445,7 +458,7 @@ the production job of an earlier successful run.
 | `Unable to resolve action …@vN` | a pinned action version doesn't exist | pin an existing tag (`gh api repos/<owner>/<action>/releases/latest`) |
 | `Not all values are present. Ensure 'client-id' and 'tenant-id' are supplied` | the repository **variables** are missing (secrets with other names don't count) | `gh variable list`; set them as above |
 | `AADSTS700213: No matching federated identity record found for … subject 'repo:…'` | the federated credential's subject differs from the one in the error | compare with `az identity federated-credential list …`; fix with `az identity federated-credential update` |
-| `AuthorizationFailed` in `az acr login` or `az containerapp update` | the role assignment is missing | the `az role assignment create` lines above |
+| `AuthorizationFailed` in `az acr login` or a deploy (`release.sh`, `update.sh`) | the role assignment is missing | the `az role assignment create` lines above |
 
 Fix, then `gh run rerun <run id>` (the id is in the run's URL).
 

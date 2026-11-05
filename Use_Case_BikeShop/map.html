@@ -296,9 +296,9 @@ const N = [
   { id: "git", x: 250, y: 640, w: 80, h: 40, t: "Git", ch: "2", s: "present", sw: "stays",
     what: "github.com/juliuskooistra/SAI. The earlier use cases are in the history under the tag pre-bikeshop.", files: [], swap: "Reused as it is." },
   { id: "ci", x: 350, y: 640, w: 120, h: 40, t: "CI (tests)", ch: "2", s: "present", sw: "adapt",
-    what: "About 270 tests, one group per build slice; GitHub Actions runs them on every push.", files: ["tests/", ".github/workflows/bikeshop.yml"], swap: "conftest.py and the platform tests stay; the shop tests are replaced." },
+    what: "About 285 tests, one group per build slice; GitHub Actions runs them on every push.", files: ["tests/", ".github/workflows/bikeshop.yml"], swap: "conftest.py and the platform tests stay; the shop tests are replaced." },
   { id: "deploy", x: 490, y: 640, w: 100, h: 40, t: "deploy", ch: "2", s: "present", sw: "stays",
-    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets. One pipeline only: the portal's \"Continuous deployment\" would add a second workflow that fights this one.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
+    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets. One pipeline only: the portal's \"Continuous deployment\" would add a second workflow that fights this one. Each deploy stops the old version before it starts the new one, so two copies never write the database (about a minute of downtime). Manual deploys still work, through the same script.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "deploy/azure/update.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
   { id: "dev", x: 610, y: 640, w: 70, h: 40, t: "dev", ch: "2", s: "present", sw: "stays",
     what: "Your laptop: uvicorn serves the API and the website, or Docker; deploy/azure/compose.azurite.yml mimics Azure.", files: ["README.md"], swap: "Reused as it is." },
   { id: "staging", x: 690, y: 640, w: 90, h: 40, t: "staging", ch: "2", s: "present", sw: "stays",
@@ -306,7 +306,7 @@ const N = [
   { id: "prod", x: 790, y: 640, w: 70, h: 40, t: "prod", ch: "2", s: "present", sw: "stays",
     what: "Azure Container Apps at demo.sai1.airs.iadsf.ch.", files: ["DEPLOY-azure.md"], swap: "Reused as it is." },
   { id: "rollback", x: 880, y: 640, w: 110, h: 40, t: "rollback", ch: "2", s: "partial", sw: "stays",
-    what: "Every image is tagged with its commit, so re-running an earlier production deploy (or az containerapp update --image bikeshop:<hash>) goes back. Data changes are not rolled back.", files: ["DEPLOY-azure.md"], swap: "Reused as it is." },
+    what: "Every image is tagged with its commit, so re-running an earlier production deploy (or deploy/azure/release.sh bikeshop <registry>/bikeshop:<hash>) goes back. Data changes are not rolled back.", files: ["DEPLOY-azure.md"], swap: "Reused as it is." },
 ];
 
 // [from, to, label, dashed]
