@@ -80,6 +80,8 @@ class Reply:
     text: str
     tool_calls: list = field(default_factory=list)
     raw: object = None  # the reply exactly as the provider sent it (to look at in step 2)
+    reasoning: str = ""  # a thinking model's reasoning, if the provider returns it
+    tokens: int = 0      # tokens this call used, if the provider says
 
 
 # =============================================================================
@@ -125,22 +127,28 @@ class AnthropicChat:
 class OpenAIChat:
     def __init__(self, client, model, system, tools):
         self.client, self.model, self.system = client, model, system
+        self.max_tokens = None   # a feature can cap the reply, e.g. the Workshop (SPEC §14.10)
         # Same menu, different wrapping: "input_schema" is called "parameters" here
         self.tools = openai_tools(tools)
 
     def ask(self, messages):
         import openai
         try:
+            limit = {"max_tokens": self.max_tokens} if self.max_tokens else {}
             r = self.client.chat.completions.create(
                 model=self.model, tools=self.tools,
-                messages=[{"role": "system", "content": self.system}, *messages])
+                messages=[{"role": "system", "content": self.system}, *messages], **limit)
         except openai.APIError as e:
             raise _readable(openai, e, self.model) or e
         msg = r.choices[0].message
+        extra = getattr(msg, "model_extra", None) or {}   # thinking models add their own fields
+        usage = getattr(r, "usage", None)
         return Reply(text=msg.content or "",
                      tool_calls=[ToolCall(c.id, c.function.name, json.loads(c.function.arguments or "{}"))
                                  for c in msg.tool_calls or []],
-                     raw=msg)
+                     raw=msg,
+                     reasoning=extra.get("reasoning_content") or extra.get("reasoning") or "",
+                     tokens=getattr(usage, "total_tokens", 0) or 0)
 
     def assistant_message(self, reply):
         message = {"role": "assistant", "content": reply.text}
@@ -167,9 +175,10 @@ def openai_tools(tools):
 # Pick the AI from .env
 # =============================================================================
 
-def connect(system, tools, provider=ASSISTANT_PROVIDER):
+def connect(system, tools, provider=ASSISTANT_PROVIDER, model=None):
     """The chat object for `provider`, with .ask(), .provider and .model.
-    Raises NotConfigured if .env is missing something; prints nothing."""
+    `model` picks another BFH model for one feature, e.g. the Workshop (SPEC §14.10);
+    without it nothing changes. Raises NotConfigured if .env is missing something; prints nothing."""
     if provider not in PROVIDERS:
         raise NotConfigured(f"Unknown ASSISTANT_PROVIDER '{provider}' in .env. Choose one of: {', '.join(PROVIDERS)}")
     dialect, base_url, key_name, default_model = PROVIDERS[provider]
@@ -182,7 +191,7 @@ def connect(system, tools, provider=ASSISTANT_PROVIDER):
             client = inference.get_client()
         except RuntimeError as e:
             raise NotConfigured(str(e))
-        chat = OpenAIChat(client, inference.model, system, tools)
+        chat = OpenAIChat(client, model or inference.model, system, tools)
     else:
         model = ASSISTANT_MODEL or default_model
         if not model:

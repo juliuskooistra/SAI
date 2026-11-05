@@ -17,6 +17,22 @@ What has to happen at the counter on a day (today by default):
 - **At risk**: bookings for a bike you have put into maintenance. Swap the
   bike or call the customer.
 
+## Workshop
+
+Every returned bike goes through the diagnostic machine. Bikes still waiting are
+listed at the top: press **Run scan**. If the scan finds something, the bike gets a
+case.
+
+1. Press **Analyse with the agent**. It reads the scan and prepares your options.
+2. Choose an option. The agent answers: it may agree, or argue for something better.
+   Discuss it until you are ready.
+3. The agent writes the plan. Ask questions, or ask for changes, then approve it.
+4. Contact the affected customers from the case: email, call, move or cancel.
+5. Record the repair, run a rescan, and put the bike back in service.
+
+A bike that isn't safe can't go back into service until a rescan passes, whatever
+anyone decides. Put it **in maintenance** straight away: that doesn't need the agent.
+
 ## Inventory
 
 Every bike, including sold and retired ones, with a summary of how many bikes

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
@@ -44,14 +44,18 @@ class BikeRouter:
                      max_price_chf: Optional[Decimal] = Query(None, gt=0, description="Sale bikes up to this price"),
                      condition: Optional[Condition] = None,
                      q: Optional[str] = Query(None, description="Text in name, brand or description"),
+                     availability: Optional[Literal["available", "maintenance"]] = Query(
+                         None, description="Only bikes that can be booked now, or only bikes in maintenance"),
                      db: Session = Depends(get_db)) -> List[BikeResponse]:
         """
         Use this to find bikes. Combine filters freely. Setting max_price_chf
         returns sale bikes only. Retired and sold bikes never appear.
         For rentals at a given time, use check_availability instead.
         """
-        bikes = self.inventory_service.search_bikes(db, purpose, category, frame_size, max_price_chf, condition, q)
-        result = [BikeResponse.model_validate(b) for b in bikes]
+        bikes = self.inventory_service.search_bikes(db, purpose, category, frame_size, max_price_chf, condition, q,
+                                                     availability)
+        expected = self.inventory_service.ready_estimates(db)   # bikes in repair stay listed (SPEC §14.9)
+        result = [BikeResponse.model_validate(b).model_copy(update={"ready_estimate": expected.get(b.id)}) for b in bikes]
         analytics_service.record(db, "catalogue_view")   # anonymous, never fails the request (SPEC §5.10)
         return result
 
@@ -63,7 +67,8 @@ class BikeRouter:
         bike = self.inventory_service.get_bike(db, bike_id)
         rate = db.get(RentalRate, bike.category) if bike.purpose == Purpose.rental else None
         result = BikeDetailResponse(
-            **BikeResponse.model_validate(bike).model_dump(),
+            **BikeResponse.model_validate(bike).model_copy(
+                update={"ready_estimate": self.inventory_service.ready_estimates(db).get(bike.id)}).model_dump(),
             rental_rate=RentalRateResponse.model_validate(rate) if rate else None,
         )
         analytics_service.record(db, "bike_view", bike_id)

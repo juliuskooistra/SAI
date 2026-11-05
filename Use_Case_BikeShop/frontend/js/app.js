@@ -27,6 +27,7 @@ import * as pricesPage from "./pages/staff-prices.js";
 import * as ordersPage from "./pages/staff-orders.js";
 import * as analyticsPage from "./pages/staff-analytics.js";
 import * as jobsPage from "./pages/staff-jobs.js";
+import * as workshopPage from "./pages/staff-workshop.js";
 
 // Every page: its route, its title in the menu, and who may see it.
 const ROUTES = [
@@ -36,6 +37,7 @@ const ROUTES = [
   { path: "assistant", title: "Assistant", page: assistantPage, menu: true },
   { path: "account", title: "Account", page: accountPage, menu: true },
   { path: "staff/board", title: "Today's board", page: boardPage, menu: true, staff: true },
+  { path: "staff/workshop", title: "Workshop", page: workshopPage, menu: true, staff: true },
   { path: "staff/inventory", title: "Inventory", page: inventoryPage, menu: true, staff: true },
   { path: "staff/prices", title: "Prices", page: pricesPage, menu: true, staff: true },
   { path: "staff/orders", title: "Orders", page: ordersPage, menu: true, staff: true },

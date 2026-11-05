@@ -274,6 +274,101 @@ class AnalyticsEvent(SQLModel, table=True):
     channel: str = Field(default="api")  # api | assistant: how, never who (SPEC §5.10)
 
 
+######################### Tables: the Workshop (SPEC §4, §14) #########################
+
+class WorkshopScan(SQLModel, table=True):
+    """One pass through the diagnostic machine, or a returned bike waiting for one."""
+    id: int | None = Field(default=None, primary_key=True)
+    bike_id: int = Field(foreign_key="bike.id", index=True)
+    rental_id: int | None = Field(default=None, index=True)     # the return that led to it
+    status: str = Field(default="done", index=True)             # waiting | done
+    scanned_at: datetime | None = Field(default=None, index=True)
+    verdict: str | None = Field(default=None)                   # fit | watch | unfit (from code, SPEC §14.3)
+    readings: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    # The simulated bike's hidden state: never sent to the agent or a page
+    faults: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+
+
+class WorkshopCase(SQLModel, table=True):
+    """One bike's way from a finding back to rentable, sold or scrapped (SPEC §14.1)."""
+    id: int | None = Field(default=None, primary_key=True)
+    bike_id: int = Field(foreign_key="bike.id", index=True)
+    scan_id: int = Field(foreign_key="workshopscan.id")
+    stage: str = Field(default="open", index=True)
+    agent_state: str = Field(default="idle")                    # idle | working | waiting | failed
+    agent_note: str | None = Field(default=None)                # why it is waiting or failed
+    step_no: int = Field(default=0)                             # a repeated job finds a newer number and stops
+    brief: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    chosen_option: str | None = Field(default=None)
+    agent_agreed: bool | None = Field(default=None)
+    plan: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    plan_version: int = Field(default=0)
+    ready_estimate: date | None = Field(default=None)
+    repair_hours: Decimal = Field(default=Decimal("0"), max_digits=6, decimal_places=2)
+    repair_day: date | None = Field(default=None)
+    outcome: str | None = Field(default=None)                   # rentable | sold | scrapped | no_finding
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class WorkshopEvent(SQLModel, table=True):
+    """One thing that happened on a case: a model round, a tool result, a message, a decision."""
+    id: int | None = Field(default=None, primary_key=True)
+    case_id: int = Field(foreign_key="workshopcase.id", index=True)
+    stage: str
+    author: str                                                 # agent | staff | code
+    kind: str                                                   # round | tool | message | position | note
+    content: str = Field(default="")
+    data: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    reasoning: str | None = Field(default=None)
+    tokens: int = Field(default=0)
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class Supplier(SQLModel, table=True):
+    """A parts supplier. All of them are fictional (SPEC §14.12)."""
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(unique=True)
+    country: str
+    kind: str                                                   # oem | aftermarket | second_hand
+    shipping_chf: Decimal = Field(default=Decimal("0"), max_digits=10, decimal_places=2)
+
+
+class PartOffer(SQLModel, table=True):
+    """One part at one supplier."""
+    id: int | None = Field(default=None, primary_key=True)
+    part: str = Field(index=True)                               # e.g. brake_pads_rear
+    label: str
+    fits: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))    # bike categories
+    supplier_id: int = Field(foreign_key="supplier.id", index=True)
+    price_chf: Decimal = Field(max_digits=10, decimal_places=2)
+    delivery_days: int
+    quality: str                                                # new_oem | new_aftermarket | used
+    safety_part: bool = Field(default=False)
+    repair_hours: Decimal = Field(default=Decimal("1"), max_digits=6, decimal_places=2)
+
+
+class BikeFinance(SQLModel, table=True):
+    """What a bike cost and is worth (invented), for keep / sell / scrap (SPEC §14.8)."""
+    bike_id: int = Field(foreign_key="bike.id", primary_key=True)
+    purchase_chf: Decimal = Field(max_digits=10, decimal_places=2)
+    book_value_chf: Decimal = Field(max_digits=10, decimal_places=2)
+    market_value_chf: Decimal = Field(max_digits=10, decimal_places=2)
+    replaces_bike_id: int | None = Field(default=None)          # the rental bike this sale bike used to be
+
+
+class CustomerAction(SQLModel, table=True):
+    """What to do about one booking a repair affects (SPEC §14.7)."""
+    id: int | None = Field(default=None, primary_key=True)
+    case_id: int = Field(foreign_key="workshopcase.id", index=True)
+    rental_id: int = Field(foreign_key="rental.id", index=True)
+    kind: str                                                   # email | call | move | cancel
+    why: str = Field(default="")
+    draft: str = Field(default="")                              # the email text, without any name
+    status: str = Field(default="open")                         # open | done
+    outcome: str | None = Field(default=None)
+
+
 ######################### Shop: request/response models #########################
 
 class LocalTimes(BaseModel):
@@ -309,6 +404,8 @@ class BikeResponse(LocalTimes):
     sale_price_chf: Optional[Decimal] = PField(default=None, description="Price for sale bikes, CHF; null for rental bikes")
     status: BikeStatus
     description: str
+    ready_estimate: Optional[date] = PField(default=None, description="For a bike in maintenance: when it is "
+                                                                      "expected back. An estimate, not a promise")
 
 
 class BikeDetailResponse(BikeResponse):

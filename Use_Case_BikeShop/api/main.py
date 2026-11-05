@@ -6,6 +6,7 @@ from .router.auth_router import AuthRouter
 from .router.billing_router import BillingRouter
 from .router.job_router import JobRouter
 from .router.assistant_router import AssistantRouter
+from .router.workshop_router import WorkshopRouter
 
 from .middleware.auth_middleware import AuthenticationMiddleware
 from .middleware.rate_limit_middleware import RateLimitMiddleware
@@ -123,6 +124,7 @@ class BikeShopAPI:
         self.app.include_router(OrderRouter().router, prefix="/api", tags=["orders"])
         # Staff (authentication and the staff role checked by middleware)
         self.app.include_router(StaffRouter().router, prefix="/staff", tags=["staff"])
+        self.app.include_router(WorkshopRouter().router, prefix="/staff", tags=["workshop"])
 
         # --- S14 hook: job router (GET /api/jobs/{id}) -------------------------
         self.app.include_router(AssistantRouter().router, prefix="/api", tags=["assistant"])

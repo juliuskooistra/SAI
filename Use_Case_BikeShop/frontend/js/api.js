@@ -221,7 +221,7 @@ export const rateLimitStatus = () => request("GET", "/billing/rate-limit-status"
 
 // ---- /api: the shop (each call costs API tokens) -------------------------------------
 
-/** filters: purpose, category, frame_size, max_price_chf, condition, q */
+/** filters: purpose, category, frame_size, max_price_chf, condition, q, availability */
 export const searchBikes = (filters) => cachedGet("/api/bikes", filters);
 export const getBike = (bikeId) => request("GET", `/api/bikes/${bikeId}`);
 export const rentalRates = () => cachedGet("/api/rental-rates");
@@ -260,6 +260,25 @@ export const completeOrder = (orderId) => request("POST", `/staff/orders/${order
 export const staffCancelOrder = (orderId) => request("POST", `/staff/orders/${orderId}/cancel`);
 /** Anonymous analytics over the last `days` days (1–365), today included. */
 export const getAnalytics = (days) => request("GET", "/staff/analytics", { params: { days } });
+// The Workshop (SPEC §14): scans, the agent's cases, and what staff decide
+export const workshopOverview = () => request("GET", "/staff/workshop");
+export const runScan = (bikeId) => request("POST", `/staff/workshop/bikes/${bikeId}/scan`);
+export const getScan = (scanId) => request("GET", `/staff/workshop/scans/${scanId}`);
+export const getCase = (caseId) => request("GET", `/staff/workshop/cases/${caseId}`);
+/** step: analyse, agree, approve-plan, retry, maintenance, back-in-service, scrap */
+export const caseStep = (caseId, step) => request("POST", `/staff/workshop/cases/${caseId}/${step}`);
+export const chooseOption = (caseId, option) => request("POST", `/staff/workshop/cases/${caseId}/choose`, { body: { option } });
+export const sendCaseMessage = (caseId, text) => request("POST", `/staff/workshop/cases/${caseId}/messages`, { body: { text } });
+export const recordProgress = (caseId, step) => request("POST", `/staff/workshop/cases/${caseId}/progress`, { body: { step } });
+export const setReadyEstimate = (caseId, date) =>
+  request("POST", `/staff/workshop/cases/${caseId}/ready-estimate`, { body: { ready_estimate: date || null } });
+export const listForSale = (caseId, price) =>
+  request("POST", `/staff/workshop/cases/${caseId}/list-for-sale`, { body: { price_chf: price } });
+export const bookingAlternatives = (actionId) => request("GET", `/staff/workshop/actions/${actionId}/alternatives`);
+export const sendCustomerEmail = (actionId, text) => request("POST", `/staff/workshop/actions/${actionId}/email`, { body: { text } });
+export const finishAction = (actionId, outcome) => request("POST", `/staff/workshop/actions/${actionId}/done`, { body: { outcome } });
+export const moveBooking = (actionId, bikeId) => request("POST", `/staff/workshop/actions/${actionId}/move`, { body: { bike_id: bikeId } });
+export const cancelBooking = (actionId) => request("POST", `/staff/workshop/actions/${actionId}/cancel`);
 /** Recent background jobs, newest first. filters: status, kind */
 export const listJobs = (filters) => request("GET", "/staff/jobs", { params: filters });
 

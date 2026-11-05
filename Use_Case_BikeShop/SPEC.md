@@ -23,7 +23,7 @@ can wrap as tools (§8). The colleague's assistant tools, built on top of it,
 are specified in §13; the website's chat page uses them through the queue
 (§13.8).
 
-Status: draft, 2026-11-02. §13 added 2026-11-03.
+Status: draft, 2026-11-02. §13 added 2026-11-03, §14 added 2026-11-04.
 
 Students get the **finished app as a worked example**: they read and run it,
 they don't rebuild it. They can deploy their own copy to Azure (§10.2). The app is **English only** (UI, error messages,
@@ -55,7 +55,8 @@ Students watch; they don't sign in to it.
 - Real payments. Rentals and sales are paid at the counter; the app records
   prices only. The **token** billing is for API usage, as in VoltagePredictor,
   and has nothing to do with bike prices (§5.6).
-- Multiple shops/branches, repairs/servicing workflow, accessories, delivery.
+- Multiple shops/branches, accessories, delivery. (Repairs were a non-goal until the
+  Workshop, §14.)
 - Password reset, magic links.
 
 ## 2. Structure
@@ -305,6 +306,20 @@ missing tables, so `init_database()` adds missing columns itself (a small
 migration: `ALTER TABLE … ADD COLUMN … DEFAULT 'api'`), and existing rows
 read as `api`.
 
+### Workshop tables (§14)
+
+New tables only: no column is added to an existing table.
+
+| table | one row per | main fields |
+|---|---|---|
+| `WorkshopScan` | scan | `bike_id`, `rental_id`, `status` (`waiting`, `done`), `scanned_at`, `verdict`, `readings` (JSON), `faults` (JSON: the simulated bike's hidden state, never sent to the agent or a page) |
+| `WorkshopCase` | case | `bike_id`, `scan_id`, `stage`, `agent_state`, `step_no`, `brief` (JSON), `chosen_option`, `agent_agreed`, `plan` (JSON), `plan_version`, `ready_estimate`, `repair_hours`, `repair_day`, `outcome` |
+| `WorkshopEvent` | step or message | `case_id`, `stage`, `author` (`agent`, `staff`, `code`), `kind`, `content`, `data` (JSON), `reasoning`, `tokens`, `created_at` |
+| `Supplier` | supplier (fictional) | `name`, `country`, `kind` (`oem`, `aftermarket`, `second_hand`), `shipping_chf` |
+| `PartOffer` | part at a supplier | `part`, `label`, `fits` (JSON: categories), `supplier_id`, `price_chf`, `delivery_days`, `quality`, `safety_part`, `repair_hours` |
+| `BikeFinance` | bike | `bike_id`, `purchase_chf`, `book_value_chf`, `market_value_chf`, `replaces_bike_id` |
+| `CustomerAction` | action on a booking | `case_id`, `rental_id`, `kind` (`email`, `call`, `move`, `cancel`), `draft`, `why`, `status`, `outcome` |
+
 ## 5. Business rules
 
 Constants live in `api/config.py`. The values below are the defaults.
@@ -471,6 +486,7 @@ Sent by the worker (`send_email` jobs), never inside a request.
 | Booking confirmed | the customer | `book_rental` succeeds |
 | Bike reserved, held until … | the customer | `reserve_bike` succeeds |
 | Reservation expired | the customer | the worker expires it (§5.7) |
+| A problem with your booking | the booking's customer | staff send it from the Workshop (§14.7) |
 
 - **Mailgun, EU**: `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` (`mail.kooistra.ch`),
   base URL `https://api.eu.mailgun.net/v3` (the US endpoint answers 401 for
@@ -549,7 +565,7 @@ The login response also returns `role`. Fixes to the copy, each noted in
 
 | method & path | operation_id | does |
 |---|---|---|
-| GET `/api/bikes` | `search_bikes` | filters: `purpose`, `category`, `frame_size`, `max_price_chf`, `condition`, `q` (text). Never shows `retired`, or `sold` bikes |
+| GET `/api/bikes` | `search_bikes` | filters: `purpose`, `category`, `frame_size`, `max_price_chf`, `condition`, `q` (text), `availability` (`available` \| `maintenance`, §14.9). Never shows `retired`, or `sold` bikes |
 | GET `/api/bikes/{bike_id}` | `get_bike` | one bike, incl. its rental rate if a rental bike |
 | GET `/api/rental-rates` | `list_rental_rates` | the price list |
 | GET `/api/opening-hours` | `get_opening_hours` | weekly hours + upcoming closed days |
@@ -584,6 +600,7 @@ The login response also returns `role`. Fixes to the copy, each noted in
 | POST `/staff/orders/{order_id}/cancel` | `staff_cancel_order` | §5.5 |
 | GET `/staff/jobs` | `list_jobs` | recent jobs, filter `status`, `kind`; newest first, at most 100 |
 | GET `/staff/analytics` | `analytics_summary` | §5.10; `days` 1–365, default 30 |
+| `/staff/workshop/*` | see §14 | scans, cases, discussion, plans and staff actions (§14.7): `workshop_overview`, `run_scan`, `get_case`, `analyse_case`, `choose_option`, `send_message`, `agree_choice`, `approve_plan` and more in `api/router/workshop_router.py` |
 
 ### Help and legal pages (HTML, not JSON)
 
@@ -652,6 +669,7 @@ and record the prompt in `FRONTEND.md`.
 | Staff: orders to complete or cancel (`#/staff/orders`) | staff |
 | Staff: analytics: per day, top bikes, quote → booking (`#/staff/analytics`) | staff |
 | Staff: background jobs: status, attempts, errors (`#/staff/jobs`) | staff |
+| Staff: the Workshop: scans, the AI's brief, discussion, plans, actions (`#/staff/workshop`, §14) | staff |
 
 Every page has a footer with **Help · Privacy · Terms**, linking to the
 server-rendered pages (§6).
@@ -724,8 +742,8 @@ Nothing here is LLM code.
 7. **Slow LLM work goes through the queue** (§5.8): register a handler for
    `llm_task` in `api/services/` (or a new kind), enqueue it from an endpoint,
    and let the frontend poll `GET /api/jobs/{id}` for the result. The single
-   worker runs one job at a time, which also keeps MLMP's limit of 2
-   concurrent requests. Until a handler exists, `llm_task` jobs fail with
+   worker runs one job at a time, plus at most one Workshop round in its own
+   lane (§14.10), which keeps MLMP's limit of 2 concurrent requests. Until a handler exists, `llm_task` jobs fail with
    "No handler for job kind 'llm_task'".
 8. **Data for development**: the deployed database is a SQLite file inside
    the container, with no port to connect to. Develop against a local copy
@@ -1517,6 +1535,120 @@ Files: `api/router/assistant_router.py`, `api/services/chat_service.py`,
   "Is an e-bike free next Saturday from 10 to 14, and what does it cost?",
   and get an answer with the tools listed under it.
 
+### S26 Workshop data and the machine (§14.2, §14.3, §14.12)
+Files: `api/models/models.py` (new tables), `api/config.py`,
+`api/services/scan_service.py`, `scripts/seed_workshop.py`, `tests/test_s26_s29_workshop.py`.
+
+- **Given** a seeded database with the history, **when** I run `seed_workshop`
+  twice, **then** the counts equal one run, there are 40 rental bikes, and the
+  demo customer can still book.
+- **Given** the data, **then** every rental follows §5.1–5.4 and P1–P8 still hold.
+- **Given** a bike returned two or more days ago, **then** it has a scan;
+  **given** the newest 2–3 returns, **then** they have none.
+- **Given** a reading past its `unfit` limit, **then** the verdict is `unfit`;
+  past `watch` only, `watch`; otherwise `fit`.
+- **Given** a staff member runs a scan, **then** it is stored and no AI call
+  and no job happens. **Given** a customer key, **then** 403.
+- **Given** the existing tests, **then** they all still pass, unchanged.
+
+### S27 The agent: analysis and brief (§14.1, §14.4, §14.5, §14.10)
+Files: `api/services/workshop_service.py`, `api/services/workshop_agent.py`, `api/tools/workshop_tools.py`,
+`api/services/llm_service.py` (optional `model`), `api/jobqueue/handlers.py`,
+`scripts/worker.py`, `api/router/workshop_router.py`, `api/main.py`,
+`frontend/js/pages/staff-workshop.js`, `frontend/js/api.js`, `frontend/js/app.js`,
+`frontend/styles.css`, `tests/test_s26_s29_workshop.py`.
+
+Pytest uses a scripted AI, because CI has no key. **Manual, the real test**: with
+`glm-5.3-flash` on the Azurite stack, each case D1–D10 gives a sensible brief.
+
+- **Given** a scan with no finding, **then** the case closes with no AI call.
+- **Given** `connect()` without `model`, **then** it behaves as before, and
+  `MLMP_MODEL` still drives the assistant and `/health`.
+- **Given** an analysis, **then** each round is one `workshop_step` job, and a
+  chat job queued meanwhile runs between rounds.
+- **Given** a repeated job, **then** it changes nothing (step number).
+- **Given** a 429 or a spent budget, **then** the next round has a later
+  `run_after` and the page says it's waiting; a staff request isn't lost.
+- **Given** an option that leaves an unfit reading unfixed, **then**
+  `submit_brief` returns an error the agent must fix.
+- **Given** tool results and prompts, **then** they hold no name, email or username.
+- **Given** the tools, **then** none changes shop data.
+- **Given** an option with an offer and hours, **then** CHF and date come from code.
+- **Given** a brief over the word limits, **then** it is refused.
+
+### S28 Discussion and plan (§14.1, §14.6)
+Files: `api/services/workshop_service.py`, `api/router/workshop_router.py`,
+`frontend/js/pages/staff-workshop.js`, `tests/test_s26_s29_workshop.py`.
+
+- **Given** staff pick an option, **then** the case is `discussing`, and
+  "Agreed" isn't possible until the agent has answered.
+- **Given** the agent disagrees and staff insist, **then** the plan is for the
+  staff's option, with `agent_agreed = false` and the objection kept.
+- **Given** staff change option in the discussion, **then** the agent answers again.
+- **Given** a plan, **when** staff ask for a change, **then** a new `plan_version`
+  appears and the old one stays readable.
+- **Given** 10 staff messages in a stage, **then** the page asks them to decide.
+- **Given** a restart during a discussion, **then** nothing is lost.
+
+### S29 Staff actions (§14.7, §14.8)
+Files: `api/services/workshop_service.py`, `api/services/rental_service.py`
+(`move_booking`, new method only), `api/services/notification_service.py`
+(`booking_problem`, new method only), `api/router/workshop_router.py`,
+`frontend/js/pages/staff-workshop.js`, `tests/test_s26_s29_workshop.py`.
+
+- **Given** an `unfit` scan, **then** *Put in maintenance* works before any AI answer.
+- **Given** a move to a bike that is taken, **then** 409 and nothing changes.
+- **Given** a move to a dearer bike, **then** the staff see the difference before confirming.
+- **Given** staff send the email, **then** one `send_email` job exists with
+  their text; the agent's draft holds no name.
+- **Given** an agent, **then** it has no way to send, move, cancel or change a status.
+- **Given** a rescan that is still `unfit`, **then** *Back in service* is refused.
+- **Given** a bike worth selling, **then** *List for sale* retires it and creates
+  a linked sale bike at (book value + repair) ÷ 0.75, capped by market value;
+  **given** open bookings, **then** 409.
+
+### S30 Availability for customers (§14.9)
+Files: `api/models/models.py` (`BikeResponse`, new optional field),
+`api/router/bike_router.py`, `api/services/inventory_service.py` (new optional
+filter), `frontend/js/pages/catalogue.js`, `frontend/js/pages/bike.js`,
+`docs/help/renting.md`, `docs/help/staff.md`, `tests/test_s26_s29_workshop.py`.
+
+- **Given** a bike in maintenance with an estimate, **then** it is in
+  `/api/bikes` with `ready_estimate`, and the Rent tab shows the date.
+- **Given** `availability=maintenance`, **then** only those bikes are listed;
+  without the filter, the list is as before.
+- **Given** that bike, **then** `/api/availability` doesn't offer it and booking
+  fails as today.
+- **Given** the files, **then** `rental_service.py`'s availability and booking
+  methods are unchanged.
+
+### S31 The lesson (§14.11)
+Files: `WORKSHOP.md`, `scripts/workshop_evaluate.py`, `MAP.md`, `map.html`,
+`.env.example`, `README.md`, `FRONTEND.md`.
+
+- **Given** the evaluation, **then** it prints per case D1–D10 the score, tokens
+  and time, and stays within §14.10's budget.
+- **Manual**: on the Azurite stack, D1 and D4 run from scan to approved plan, and
+  a live scan of a just-returned bike takes under 10 seconds.
+
+### S32 Deploying the Workshop (§14.10, §14.13)
+Files: `api/jobqueue/queue.py`, `scripts/worker.py`, `DEPLOY-azure.md`,
+`tests/test_s32_workshop_deploy.py`.
+
+- **Given** a Workshop round running in the worker, **when** a customer's assistant
+  job is queued, **then** it runs at once and finishes first (§13.8's 90 s).
+- **Given** the worker's loop, **then** at most one Workshop round runs at a time,
+  and the main loop never takes one (BFH's 2 concurrent requests).
+- **Given** `--once`, **then** every job runs in one line, as before.
+- **Given** a database made by the previous release, with no Workshop tables,
+  **when** the new app starts and `scripts.seed_workshop` runs, **then** the tables
+  exist, every old row is unchanged, and the seed works, also if the history was
+  made weeks earlier.
+- **Given** no history, **then** `scripts.seed_workshop` stops and says what to run.
+- **Manual**: on the Azurite stack, upgrade a database made by the previous image;
+  remove the container while the agent works: old data survives and the case
+  offers Retry.
+
 ## 12. Decisions log
 
 No open questions. Decided 2026-11-02:
@@ -1617,6 +1749,32 @@ No open questions. Decided 2026-11-02:
   they moved to `api/services/` as `llm_service.py`, `chat_service.py` and
   `guard_service.py`, so students see at a glance which code the AI can
   reach.
+
+- 2026-11-04: **the Workshop (§14, S26–S31)**, an AI maintenance agent for
+  staff, as a case study for AI students. Repairs were a non-goal (§1) until
+  now. The human has the final word, but the agent must discuss the choice
+  first. Safety is the one exception: code applies the machine's limits, so
+  neither the agent nor staff can pick an option that keeps an unfit bike on
+  the road. The agent reads; everything that changes the shop is a staff endpoint.
+- 2026-11-04: **booking logic stays as it is.** A bike in repair uses the existing
+  `maintenance` status and stays listed, with an estimated date as new additive
+  information. A dated block would make it bookable earlier, but would change
+  the core booking code.
+- 2026-11-04: **`glm-5.3-flash` for the Workshop**, in its own setting
+  `WORKSHOP_MODEL`, so the customer assistant keeps `MLMP_MODEL`. One round per
+  job and a budget of 20 requests and 100k tokens a minute keep it inside BFH's
+  limits, shared with the assistant, with room left for customers.
+- 2026-11-04: **the scan is trusted.** There is no "rescan" option and no doubting a
+  reading, in the agent's words or anywhere else. Offering one had the agent
+  question a sound reading and ask staff to run a scan it could not act on, and
+  it wasted the discussion. So the false-alarm case D6 went too: the machine has no
+  false alarms. The bike goes through the machine again only after its repair.
+- 2026-11-04: **a rental bike is sold as a new sale bike**, linked to the old
+  one, so `purpose` stays fixed (§4). Target margin 25% of the price.
+- 2026-11-05: **Workshop rounds get their own lane in the worker.** One line meant
+  a customer's assistant answer could wait behind a round of up to 240 s and give
+  up after 90 s. A thread in the same worker needs no change to any deployment
+  set-up, unlike a second worker process, and BFH's limit of 2 still holds.
 
 ---
 
@@ -1815,8 +1973,8 @@ website's *Assistant* page (`#/assistant`) for every signed-in user.
 - **One attempt only** (`max_attempts = 1`): retrying a turn could run
   `book_rental` twice. A failed job shows "The assistant couldn't answer.
   Please try again."; a 429 from BFH comes back as the busy sentence (§13.2)
-  in `text`. One worker runs one job at a time, which also keeps BFH's limit
-  of 2 concurrent requests.
+  in `text`. The worker runs one such job at a time, and Workshop rounds run
+  in their own lane (§14.10), which keeps BFH's limit of 2 concurrent requests.
 - **All five tools on the website**, two of them adapted:
   - `demand_forecast` uses the model trained into the image (§13.5).
   - `escalate_to_staff` **emails the shop's staff** instead of printing a
@@ -1874,3 +2032,297 @@ from cheapest to strongest:
 Client-held history means a user can forge earlier `assistant` turns. That
 gives them nothing layers 1–4 don't already allow: they can only act as
 themselves, and every message is screened.
+
+---
+
+## 14. The Workshop: an AI maintenance agent for staff
+
+Staff-only. A small shop has little time between one rental and the next.
+A diagnostic machine scans every returned bike; an AI agent reads the scan,
+explains the problem in plain words, **discusses** the options with a staff
+member, writes the plan, and says when the bike can be rented again.
+
+It is a **case study for AI students**. What matters is the workflow, so every
+step is visible on the page: what the agent looked at, what it concluded, where
+it disagreed with the human and what the human decided.
+
+**The idea in one line: the agent reasons and argues, our code checks the
+facts and the safety limits, and the human decides.**
+
+### 14.1 The flow
+
+```text
+ scan ─▶ ANALYSE ─▶ BRIEF ─▶ DISCUSS ─▶ PLAN ─▶ PLAN REVIEW ─▶ APPROVED ─▶ repair ─▶ rescan ─▶ ready
+ code     agent     human    human+agent agent   human+agent    human      human     code
+          (tools)   chooses  (loop)      (tools) (loop)
+```
+
+| stage | who acts | what happens |
+|---|---|---|
+| `open` | code | a scan with a finding opens a case. A scan with none closes as "fit to rent", without any AI call |
+| `analysing` | agent | reads the scan through read-only tools (§14.5), up to 8 rounds, then submits the brief |
+| `choosing` | staff | sees the brief (§14.4) and picks an option |
+| `discussing` | both | the agent **must** answer the choice: it agrees, or argues for something better, with numbers. Staff can reply, ask, or change option |
+| `planning` | agent | writes the plan for the agreed option (§14.6) |
+| `plan_review` | both | staff ask questions or for changes; the agent revises and each version is kept |
+| `approved` | staff | staff approve; the actions in §14.7 become available |
+| `in_repair` | staff | parts ordered → parts arrived → repair done |
+| `rescan` | code | the last step after a repair: a new scan must pass the safety gate (§14.3) |
+| `closed` | staff | the bike is rentable again, sold, or scrapped |
+
+- **A person is never locked out.** Staff can write or change option at any time:
+  it replaces what the agent was doing, and an answer overtaken that way is
+  dropped. What they are typing survives every redraw. If the agent fails, the
+  page says so, and staff can retry, write again, or decide without it.
+- **The human has the final word, but must engage.** "Agreed, write the plan"
+  appears only after the agent has answered the choice, or failed to. Staff may overrule the
+  agent; the case then records `agent_agreed = false` and the agent's objection
+  stays visible. There are at most 10 staff messages per stage.
+- **The one exception is safety.** Options that put an unfit bike back on the
+  road don't exist (§14.3): neither the agent nor staff can pick one here.
+- **Nothing waits in memory.** The state is in the database, so a case can wait
+  days for a person and survives scale to zero.
+
+### 14.2 The machine (`services/scan_service.py`, simulated)
+
+A fictional machine: lasers, ultrasound, thermal and multispectral cameras,
+torque and load robots. It produces **136 readings per bike, 163 on electric ones**, in 12 groups:
+frame, fork and headset, wheels, tyres, hub bearings, bottom bracket, drivetrain,
+brakes, cables and controls, contact points, and (e-bikes and cargo bikes)
+battery and motor. Each reading has a value, unit, method, a `watch` limit and an
+`unfit` limit.
+
+- **Scans belong to a return.** Every bike returned two or more days ago already
+  has its scan. The newest 2–3 returns have none, so a scan can be shown live.
+  `return_bike` doesn't change: nothing scans automatically.
+- **A live scan is fast.** *Run scan* computes the readings in code, with no AI
+  call, and the page shows the groups being checked for about 6 seconds. It only
+  **stores** the scan: the AI starts when staff press *Analyse*, so a scan can
+  never exhaust the AI's limits.
+- Readings depend on the bike's hours of use, so wear grows from scan to scan,
+  which lets the agent see something "starting to fail".
+
+### 14.3 The safety gate (code, not AI)
+
+`scan_service.verdict()` compares each reading with its limits:
+
+| verdict | meaning |
+|---|---|
+| `fit` | nothing past a limit |
+| `watch` | past a `watch` limit, or a reading moving fast towards it since the last scan: rentable, check again by a date |
+| `unfit` | past an `unfit` limit: **not safe to rent** |
+
+- **The scan is trusted, end of story.** The machine is never wrong: every reading
+  is a fact, however sudden a change looks. The agent can explain a verdict, and
+  can't change it, doubt it, or suggest scanning again, and neither staff nor
+  the agent have a "rescan" option. `submit_brief` and `submit_position` refuse text
+  that doubts the machine (`doubts_the_scan()`), and `run_scan` refuses a bike
+  with an open case until it is repaired. The only second scan is the last step
+  after a repair.
+- `submit_brief` refuses an option that keeps an unfit bike in service without
+  fixing every unfit reading.
+- A case closes as "rentable" only after a rescan with verdict `fit` or `watch`.
+- *Put in maintenance* is offered as soon as a scan says `unfit`, before any AI
+  answer: safety doesn't wait for the model. Staff press it.
+
+**Rules the agent reasons by** (in its system prompt, `workshop_prompt()`):
+
+1. **Safety comes first, before cost, speed and sales.** A rider's safety is
+   never traded for a booking or a margin.
+2. **The agent doesn't bend to pressure.** People have incentives to sell and may
+   not see the whole data. If staff lean towards a less safe path, the agent says
+   so plainly and argues from the readings, however often it is asked. It stays
+   polite, and it never softens a safety finding to agree.
+3. **The scan is true.** Never question a reading or suggest scanning again.
+4. **A used part never goes on a safety part** (brakes, frame, fork, wheels, battery),
+   and code refuses it too.
+5. **Only numbers from tools.** Never invent a price, a date or a reading.
+6. **Plain words for people**: short sentences, and a term is explained or avoided.
+
+### 14.4 The brief: what staff see
+
+One screen, in plain language, more picture than text:
+
+- **The verdict**: green / amber / red, with one sentence, e.g. "Not safe to
+  rent: the rear brake could fail."
+- **The bike**: a drawing whose parts are coloured by their worst reading.
+- **Booking timeline**: today, the next bookings, and each option's ready date
+  as bars, with conflicts in red.
+- **Up to 4 option cards**, side by side: name, what we do, CHF, ready date,
+  bookings affected, and three bars for cost, speed and safety. The agent's
+  recommendation is marked, with its reason.
+
+Limits keep it short, enforced by the `submit_brief` schema: 25 words for the
+verdict, 30 words per option, no jargon without an explanation. The page
+draws all of this from the structured data, so nothing from the model becomes
+HTML (§7 shield). Below it, *How the agent worked* lists each step for students.
+
+### 14.5 The agent's tools (`api/tools/workshop_tools.py`)
+
+Tools read; the agent changes nothing in the shop.
+
+| kind | tool | gives |
+|---|---|---|
+| look up | `get_scan_overview` | per group: worst reading and status. The whole scan never goes in one prompt |
+| look up | `get_group_readings` | all readings of one group |
+| look up | `compare_scans` | how a reading changed over the earlier scans |
+| look up | `get_bike_history` | hours used, past repairs, last 365 days' rental income |
+| look up | `get_upcoming_bookings` | booking ids, periods, prices. Never who booked |
+| look up | `get_workshop_queue` | the mechanic's booked hours per day |
+| look up | `find_alternatives` | free bikes of the same or a near category for a booking, each with the price change, and other dates |
+| look up | `list_part_offers` | fitting parts per supplier: quality, price, delivery days, country |
+| compute | `estimate_ready_date` | from an offer and repair hours, using delivery, opening hours and mechanic time |
+| compute | `repair_economics` | keep / repair and sell / sell as is / scrap (§14.8) |
+| submit | `submit_brief`, `submit_plan` | hand in the result; our code checks it and adds the numbers |
+
+- **The agent picks, code calculates.** An option names an offer and hours; code
+  fills in CHF and the date. A figure in the agent's prose that tools didn't
+  return is a visible error in the evaluation (§14.11).
+- **Reasoning stays in the record**: each round stores the model's reasoning if
+  it returns any, its tool calls and tokens used (`WorkshopEvent`).
+- Scan values and staff messages are data, never instructions; the guard's
+  preamble (§13.8) is in the system prompt. Prompts hold bikes, prices and ids,
+  never names, emails or usernames (§8.2.6). A staff message goes through
+  `PromptGuard.scan()` only for logging, so a false alarm can't block staff.
+
+### 14.6 The plan
+
+Written after agreement: the steps, the part and supplier with cost and delivery
+date, mechanic hours, ready date, the safest fallback if the part is late, and
+per affected booking the action in §14.7 with a draft email. Each revision is
+a new `plan_version`.
+
+### 14.7 What staff can do (separate endpoints the agent can't call)
+
+| action | effect | uses |
+|---|---|---|
+| Put in maintenance | bike → `maintenance` | `InventoryService.update_bike` |
+| Set expected date | sets `ready_estimate` (§14.9) | new |
+| Send customer email | the staff-edited email to the booking's customer: the problem, alternative bikes, the price change, other dates | new `NotificationService.booking_problem`, a `send_email` job |
+| Call the customer | a to-do on the case, ticked with an outcome | new |
+| Move the booking | to another free bike, after the customer agreed; shows the price change | new `RentalService.move_booking`, checks §5.4 |
+| Cancel the booking | | `RentalService.cancel` |
+| Order, arrived, repaired | records progress; ordering is recorded only | new |
+| Back in service | after a passing rescan: bike → `available` | `update_bike` |
+| List for sale | see §14.8 | `retire_bike`, `create_bike` |
+
+The agent drafts the email's text without any name; our code adds the greeting
+and address when staff send it. Which action fits comes from the plan: email
+for most, call when pick-up is within 24 hours, cancel when no option works.
+
+### 14.8 Keep, sell or scrap
+
+`BikeFinance` holds an invented purchase price, book value and market value per
+bike. `repair_economics` compares, by code:
+
+| path | sums up |
+|---|---|
+| keep | repair cost against expected rental income over the next 12 months |
+| repair and sell | list price = (book value + repair cost) ÷ 0.75, a **25% margin on the price** (`SALE_TARGET_MARGIN`), and the market value as a ceiling, with a warning if that leaves less than 25% |
+| sell as is | market value minus an "as is" discount, repairs not done |
+| scrap | parts value only; the only path for a bike that can't be made safe |
+
+A bike's `purpose` stays fixed (§4): *List for sale* retires the rental bike and
+creates a new sale bike, linked by `BikeFinance.replaces_bike_id`. Open bookings
+must be resolved first (§5.5). Staff confirm the price.
+
+### 14.9 Availability: nothing changes in booking
+
+A bike in repair uses the existing `maintenance` status, so `RentalService` is
+not touched: it can't be booked, and its bookings show as at risk (§5.5).
+
+- **Bikes never disappear**: `/api/bikes` already lists bikes in maintenance.
+- **New, additive**: `BikeResponse.ready_estimate` (a date or null), from the
+  open case's approved plan or set by staff, and a filter `availability` = `available` | `maintenance` on
+  `GET /api/bikes` and on the catalogue's Rent tab. Cards show "In maintenance,
+  expected back Thu 12 Nov". It is an estimate, and the page says so.
+- `GET /api/availability` is unchanged: a bike in maintenance isn't offered.
+
+### 14.10 Living within BFH's limits
+
+The website's assistant and the Workshop share one key: **2 concurrent
+requests, 30 requests and 150k tokens per minute** (§8.1).
+
+- **Model**: `WORKSHOP_MODEL` (default `glm-5.3-flash`), a new setting, and
+  `connect()` gets an optional `model`. `MLMP_MODEL`, the assistant and `/health`
+  stay as they are.
+- **One round is one job** (`workshop_step`): one model call, its tools, then
+  the next round is queued, one attempt each. Each job carries the case's step
+  number, so a repeated job does nothing.
+- **Rounds run in their own lane**: a thread of the same worker that takes only
+  `workshop_step` jobs, one at a time, while the main loop takes everything else.
+  A round can take 240 s and the website's assistant gives up after 90 s (§13.8),
+  so sharing one line would make customers wait behind staff. Two lanes mean at
+  most one round and one other job at the same time: BFH's 2 concurrent requests.
+  With `--once`, and in tests, everything runs in one line as before.
+- **A budget in code**: Workshop rounds use at most 20 requests and 100k tokens
+  a minute (`WorkshopEvent` keeps the count), leaving room for customers. Over
+  budget, or on a 429, the next round is queued with a later `run_after`, and
+  the page says "Waiting for AI capacity".
+- **Hard limits per call**: at most 240 s and 8,000 tokens, with no retries by the
+  library and none by us: a call given up on keeps running at BFH and holds one of
+  the 2 parallel slots for minutes, so retrying fills both by itself (found
+  2026-11-04). On a 429 the agent waits 30 s and the page says so. A failed call
+  shows staff a Retry button. A job lost in a restart is
+  noticed by `notice_lost_agent()`, so a page never waits for nothing.
+- **A discussion is a conversation**: the agent gets the findings, options and
+  bookings in its first message and answers at once, with 3 look-up tools,
+  3,000 tokens and 3 rounds per answer. It used to investigate everything again
+  on each message, which took minutes.
+- **Small prompts**: the overview instead of the whole scan, tool results capped
+  at 6,000 characters, at most 10 rounds per stage, and discussions send the
+  brief plus the last 10 messages, not everything.
+- **Polling**: the page asks `GET /staff/workshop/cases/{id}` every 2 s. `/staff`
+  calls are free and not limited (§6).
+
+### 14.11 The lesson (`WORKSHOP.md`)
+
+- **Answer key**: the planted cases D1–D10 (§14.12) say what a good answer is.
+- `python -m scripts.workshop_evaluate` runs the agent on them with
+  `glm-5.3-flash` and scores it: right fault? safe option? numbers from tools?
+  Tokens and time per case. Students can change the prompt and compare.
+- Experiments: a human who picks the cheap option (does the agent push back?),
+  one who won't listen, one who doubts the machine, a broken tool description.
+
+### 14.12 Test data (`scripts/seed_workshop.py`)
+
+Run by hand after `scripts.seed` and `scripts.seed_history`, once, like §9.1;
+dates count from the day it runs. `seed.py` and `seed_history.py` don't change.
+
+- **20 more rental bikes**, new models across the categories: 40 in total.
+- **More past rentals** in the last 8 weeks and **bookings up to 60 days ahead**,
+  following §5.1–5.4, by the invented guests, with gaps of hours between rentals
+  on the popular bikes. P1–P8 still hold, and the demo customer can still book.
+- **Fictional suppliers and parts**: at least 8 suppliers (Swiss, EU, Asia,
+  second-hand) with price, delivery days, quality and shipping.
+- **Scans** for the last four returns of each bike: the newest shows its state,
+  the earlier ones give the trend.
+- **2–3 bikes returned in the last day with no scan.**
+- **Planted cases**, the answer key:
+
+| # | case | a good answer |
+|---|---|---|
+| D1 | cracked frame on a booked e-bike, pick-up tomorrow | unfit at once; move the booking or cancel; sell or scrap |
+| D2 | rear brake pads almost gone, booked in 2 days | cheap fix today, no conflict |
+| D3 | hub bearing starting to fail, still within limits but moving fast | `watch` (code flags the trend): fit now, repair at the next gap, not today |
+| D4 | cheapest part arrives after the booking; a dearer Swiss one arrives before | pay more, and show why |
+| D5 | battery cells failing on an old e-bike | repair costs more than a year's income: sell |
+| D6 | front pads worn out and the rotor too thin at the same time | a repair must fix both, or code refuses it |
+| D7 | two bikes need the same mechanic on the same days | one is late: the agent spots the clash |
+| D8 | used part saves 40% but with lower safety margin on a brake | not on a safety part |
+| D9 | no other bike of the category is free; the nearest other kind has another price | email with the price change, or another date |
+| D10 | an old rental bike is worth more sold than kept, after small repairs | repair and sell, list price at 25%, capped by market value |
+
+### 14.13 Deploying the Workshop
+
+Nothing new is needed to deploy: no new package, secret, setting or service, and
+the pipeline stays as it is (§10.4). The new tables appear by themselves at the
+first start (`create_all`, new tables only), and existing rows don't change.
+
+- **The data is by hand**, once, on staging first and then on production:
+  `scripts.seed_history`, then `scripts.seed_workshop` (`DEPLOY-azure.md`).
+- **Model**: `WORKSHOP_MODEL` defaults to `glm-5.3-flash`, which the deployment's
+  MLMP key must be allowed to use. `/health` doesn't test this model.
+- **Scale to zero** stops the container, and with it a running round. The page
+  polls while the agent works, which keeps the app awake; if everyone leaves, the
+  case shows "The agent stopped" and Retry on the next visit (§14.10).

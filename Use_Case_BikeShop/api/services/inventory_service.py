@@ -1,7 +1,7 @@
 """
 Catalogue, inventory and the rental price list (SPEC §4, §5.5, §6).
 """
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -12,7 +12,7 @@ from ..config import OPENING_HOURS, HOLIDAYS, TIME_GRID_MINUTES, MIN_RENTAL_HOUR
     MAX_DAYS_AHEAD, MAX_OPEN_RENTALS_PER_CUSTOMER, ORDER_HOLD_DAYS, MAX_RESERVED_ORDERS_PER_CUSTOMER
 from ..models.models import (
     Bike, BikeCreateRequest, BikeStatus, BikeUpdateRequest, Category, Condition, FrameSize, Order,
-    OrderStatus, Purpose, Rental, RentalRate, RentalRateRequest, RentalStatus,
+    OrderStatus, Purpose, Rental, RentalRate, RentalRateRequest, RentalStatus, WorkshopCase,
 )
 from ..timeutils import utcnow, to_local
 from .errors import Conflict, NotFound, RuleViolation
@@ -29,8 +29,9 @@ class InventoryService:
 
     def search_bikes(self, db: Session, purpose: Optional[Purpose] = None, category: Optional[Category] = None,
                      frame_size: Optional[FrameSize] = None, max_price_chf: Optional[Decimal] = None,
-                     condition: Optional[Condition] = None, q: Optional[str] = None) -> list[Bike]:
-        """Bikes customers can see: never retired or sold ones."""
+                     condition: Optional[Condition] = None, q: Optional[str] = None,
+                     availability: Optional[str] = None) -> list[Bike]:
+        """Bikes customers can see: never retired or sold ones. availability: SPEC §14.9."""
         query = select(Bike).where(Bike.status.not_in([BikeStatus.retired, BikeStatus.sold]))
         if purpose:
             query = query.where(Bike.purpose == purpose)
@@ -40,12 +41,22 @@ class InventoryService:
             query = query.where(Bike.frame_size == frame_size)
         if condition:
             query = query.where(Bike.condition == condition)
+        if availability == "available":
+            query = query.where(Bike.status == BikeStatus.available)
+        elif availability == "maintenance":
+            query = query.where(Bike.status == BikeStatus.maintenance)
         if max_price_chf is not None:
             query = query.where(Bike.purpose == Purpose.sale, Bike.sale_price_chf <= max_price_chf)
         if q:
             like = f"%{q.strip()}%"
             query = query.where(or_(Bike.name.ilike(like), Bike.brand.ilike(like), Bike.description.ilike(like)))
         return db.exec(query.order_by(Bike.purpose, Bike.category, Bike.code)).all()
+
+    def ready_estimates(self, db: Session) -> dict[int, date]:
+        """bike id -> when an open Workshop case expects it back (SPEC §14.9)."""
+        rows = db.exec(select(WorkshopCase.bike_id, WorkshopCase.ready_estimate).where(
+            WorkshopCase.stage != "closed", WorkshopCase.ready_estimate.is_not(None))).all()
+        return dict(rows)
 
     def get_bike(self, db: Session, bike_id: int, include_retired: bool = False) -> Bike:
         bike = db.get(Bike, bike_id)

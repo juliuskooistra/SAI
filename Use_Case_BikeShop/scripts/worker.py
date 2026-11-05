@@ -12,9 +12,14 @@ times. Every cycle it
 4. deletes analytics events older than ANALYTICS_KEEP_DAYS (once a day),
 5. claims and runs queued jobs, one at a time, heart-beating while each runs.
 
+Workshop rounds can take minutes, so they run in a lane of their own, a thread
+that takes only those jobs: a customer's assistant answer never waits behind
+one (SPEC §14.10).
+
 Adapted from AI Beacon's `backend/jobqueue/worker.py`: that one is asyncio
 with several jobs at once; this one is a plain loop with one job at a time,
-which also keeps MLMP's limit of 2 concurrent requests (SPEC §8.2).
+plus the Workshop's lane, which keeps MLMP's limit of 2 concurrent requests
+(SPEC §8.2).
 
     python -m scripts.worker          # run forever, polling every WORKER_POLL_SECONDS
     python -m scripts.worker --once   # one cycle (all due work), then exit
@@ -39,6 +44,7 @@ from api.database import engine, init_database, start_write_transaction
 from api.jobqueue import queue
 from api.jobqueue.handlers import HANDLERS
 import api.services.chat_service  # noqa: F401  registers the assistant_reply handler (SPEC §13.8)
+import api.services.workshop_agent  # noqa: F401  registers the workshop_step handler (SPEC §14.10)
 from api.models.models import AnalyticsEvent, JobRun
 from api.observability import setup_logging
 from api.services.order_service import OrderService
@@ -49,6 +55,7 @@ CLEANUP_JOB = "analytics-cleanup"
 WORKER_ROW = "worker"
 SEEN_EVERY_SECONDS = 30
 MAX_JOBS_PER_CYCLE = 50   # so a flood of jobs can't hold up the scheduled ones for long
+SLOW_KINDS = ("workshop_step",)   # run in their own lane (SPEC §14.10)
 
 log = logging.getLogger("worker")
 
@@ -174,6 +181,7 @@ class Worker:
         self.next_expiry_at = None      # None: due now (at start-up)
         self.last_cleanup_day = None
         self._last_seen_write = None    # time.monotonic() of the last "worker" JobRun write
+        self.skip = ()                  # kinds the main loop leaves to the slow lane
 
     def mark_seen(self) -> None:
         """JobRun 'worker' = when the worker last polled (at most every 30 s)."""
@@ -202,12 +210,12 @@ class Worker:
             run_analytics_cleanup()
             self.last_cleanup_day = today
 
-    def run_jobs(self, limit: int = MAX_JOBS_PER_CYCLE) -> int:
+    def run_jobs(self, limit: int = MAX_JOBS_PER_CYCLE, only: tuple = ()) -> int:
         """Claim and run due jobs until the queue is empty (or `limit`). Returns how many ran."""
         ran = 0
         while ran < limit:
             with Session(engine) as db:
-                job = queue.claim(db, self.worker_id)
+                job = queue.claim(db, self.worker_id, only=only, skip=() if only else self.skip)
             if job is None:
                 break
             run_job(job)
@@ -228,7 +236,20 @@ class Worker:
             log.exception("running queued jobs failed")
         return ran
 
+    def run_slow_lane(self) -> None:
+        """Workshop rounds, one at a time, next to the main loop (the thread of run_forever)."""
+        while True:
+            try:
+                ran = self.run_jobs(only=SLOW_KINDS)
+            except Exception:  # noqa: BLE001 - the lane must keep going
+                log.exception("running slow jobs failed")
+                ran = 0
+            if ran == 0:
+                time.sleep(WORKER_POLL_SECONDS)
+
     def run_forever(self) -> None:
+        self.skip = SLOW_KINDS
+        threading.Thread(target=self.run_slow_lane, name="slow-lane", daemon=True).start()
         log.info("worker %s started: polling every %ss, expire-reservations every %d minutes, kinds %s",
                  self.worker_id, WORKER_POLL_SECONDS, EXPIRE_EVERY_MINUTES, sorted(HANDLERS))
         while True:

@@ -11,14 +11,14 @@
 import * as api from "../api.js";
 import {
   el, show, select, loading, errorBox, message, run, periodPicker,
-  fmtChf, fmtTime, bikeTitle, CATEGORIES, FRAME_SIZES, CONDITIONS,
+  fmtChf, fmtTime, fmtDay, bikeTitle, CATEGORIES, FRAME_SIZES, CONDITIONS,
 } from "../ui.js";
 
 // Remembered between visits (as long as the tab is open).
 const state = {
   tab: "buy",
   buy: { category: "", frame_size: "", condition: "", max_price_chf: "", q: "" },
-  rent: { category: "", frame_size: "", q: "" },
+  rent: { category: "", frame_size: "", availability: "", q: "" },
   period: null,          // the period last chosen on the Rent tab
   found: null,           // the last availability answer
 };
@@ -66,7 +66,8 @@ function bikeCard(bike, priceText, link) {
       el("h3", {}, el("a", { href: link }, bikeTitle(bike))),
       el("div", { class: "muted small" },
         `${bike.category} · frame ${bike.frame_size} · ${bike.color} · ${bike.year} · ${bike.condition}`),
-      bike.status !== "available" ? el("span", { class: "badge warn" }, bike.status) : null),
+      bike.status !== "available" ? el("span", { class: "badge warn" }, bike.status) : null,
+      bike.ready_estimate ? el("span", { class: "small muted" }, ` Expected back ${fmtDay(bike.ready_estimate)} (an estimate)`) : null),
     el("div", { class: "price" }, priceText),
     el("a", { href: link, class: "button" }, "View"));
 }
@@ -142,6 +143,7 @@ async function drawRentTab(content) {
     el("div", { class: "form-grid" },
       filterSelect("Category", CATEGORIES, filters, "category", loadList),
       filterSelect("Frame size", FRAME_SIZES, filters, "frame_size", loadList),
+      filterSelect("Availability", [["available", "Can be booked"], ["maintenance", "In maintenance"]], filters, "availability", loadList),
       searchBox(filters, loadList)),
     el("h2", {}, "Which bikes are free when?"),
     el("div", { id: "period-area" }, loading()),
