@@ -175,7 +175,7 @@ aside p { margin: 0; }
           <li>api/router/ auth, billing, job, assistant</li>
           <li>api/services/ llm_service.py, chat_service.py, guard_service.py <em>the AI connection, the chat loop, the prompt guard</em></li>
           <li>scripts/worker.py, create_staff.py, start.sh</li>
-          <li>Dockerfile, compose files, litestream.yml, nginx config</li>
+          <li>Dockerfile, compose files, litestream.yml, nginx config, the deploy/azure/ scripts</li>
           <li>frontend/index.html, styles.css, js/ui.js, pages/ login, account, staff-jobs, staff-analytics, assistant</li>
           <li>tests/conftest.py, the platform, queue, content and web-assistant tests</li>
         </ul></div>
@@ -298,7 +298,7 @@ const N = [
   { id: "ci", x: 350, y: 640, w: 120, h: 40, t: "CI (tests)", ch: "2", s: "present", sw: "adapt",
     what: "About 285 tests, one group per build slice; GitHub Actions runs them on every push.", files: ["tests/", ".github/workflows/bikeshop.yml"], swap: "conftest.py and the platform tests stay; the shop tests are replaced." },
   { id: "deploy", x: 490, y: 640, w: 100, h: 40, t: "deploy", ch: "2", s: "present", sw: "stays",
-    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets. One pipeline only: the portal's \"Continuous deployment\" would add a second workflow that fights this one. Each deploy stops the old version before it starts the new one, so two copies never write the database (about a minute of downtime). Manual deploys still work, through the same script.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "deploy/azure/update.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
+    what: "GitHub Actions on every merge to main: tests → image bikeshop:<commit> → staging (checked with /health) → your approval → the same image to production. Azure login via a managed identity and OIDC, no stored secrets. One pipeline only: the portal's \"Continuous deployment\" would add a second workflow that fights this one. Each deploy stops the whole app, makes the new version while nothing runs, and then starts it, so two copies never write the database (about a minute of downtime). Manual deploys still work, through the same script.", files: [".github/workflows/bikeshop.yml", "deploy/azure/release.sh", "deploy/azure/update.sh", "DEPLOY-azure.md"], swap: "Stays; rename the services." },
   { id: "dev", x: 610, y: 640, w: 70, h: 40, t: "dev", ch: "2", s: "present", sw: "stays",
     what: "Your laptop: uvicorn serves the API and the website, or Docker; deploy/azure/compose.azurite.yml mimics Azure.", files: ["README.md"], swap: "Reused as it is." },
   { id: "staging", x: 690, y: 640, w: 90, h: 40, t: "staging", ch: "2", s: "present", sw: "stays",
