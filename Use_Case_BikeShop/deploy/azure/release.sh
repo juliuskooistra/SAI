@@ -1,34 +1,25 @@
 #!/usr/bin/env bash
 # Deploy one image to one container app and wait until it's healthy
 # (SPEC §10.4). Used by the GitHub workflow for staging and production; also
-# works from a laptop after `az login`.
+# works from a laptop after `az login`, and for a rollback to an earlier image.
 #
 #   AZURE_RESOURCE_GROUP=bikeshop-rg bash deploy/azure/release.sh bikeshop-staging <registry>.azurecr.io/bikeshop:<tag>
+#
+# The work is done by update.sh: it stops the running revision before it
+# starts the new one, so two copies never write the database (SPEC §10.2).
 set -euo pipefail
 
-APP="$1"
-IMAGE="$2"
+APP="${1:?Usage: release.sh <app> <image>}"
+IMAGE="${2:?Usage: release.sh <app> <image>}"
 RG="${AZURE_RESOURCE_GROUP:?Set AZURE_RESOURCE_GROUP}"
 
-az extension add --name containerapp --upgrade --only-show-errors >/dev/null
-
 echo "Deploying $IMAGE to $APP"
-az containerapp update --name "$APP" --resource-group "$RG" --image "$IMAGE" --only-show-errors -o none
+bash "$(dirname "$0")/update.sh" "$APP" --image "$IMAGE"
 
-# The app's own address, not the custom domain, so a certificate problem
-# can't hide whether the deployment worked
-FQDN=$(az containerapp show --name "$APP" --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv)
-RUNNING=$(az containerapp show --name "$APP" --resource-group "$RG" --query "properties.template.containers[0].image" -o tsv)
-[ "$RUNNING" = "$IMAGE" ] || { echo "Expected $IMAGE, the app has $RUNNING" >&2; exit 1; }
-
-# Wait up to 5 minutes: the app may first have to wake up and restore its database
-for attempt in $(seq 1 30); do
-  if HEALTH=$(curl -fsS --max-time 60 "https://$FQDN/health") && grep -q '"database":"ok"' <<<"$HEALTH"; then
-    echo "Healthy: $HEALTH"
-    exit 0
-  fi
-  echo "Not healthy yet (attempt $attempt), waiting 10 s"
-  sleep 10
-done
-echo "$APP did not become healthy within 5 minutes" >&2
-exit 1
+RUNNING=$(az containerapp show --name "$APP" --resource-group "$RG" \
+            --query "properties.template.containers[0].image" -o tsv)
+if [ "$RUNNING" != "$IMAGE" ]; then
+  echo "Expected $IMAGE, the app has $RUNNING" >&2
+  exit 1
+fi
+echo "$APP runs $IMAGE"
