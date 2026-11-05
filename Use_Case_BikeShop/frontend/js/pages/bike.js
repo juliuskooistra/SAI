@@ -12,7 +12,7 @@
 */
 
 import * as api from "../api.js";
-import { el, show, loading, errorBox, message, run, setFlash, periodPicker, fmtChf, fmtTime, bikeTitle } from "../ui.js";
+import { el, show, loading, errorBox, message, run, setFlash, periodPicker, fmtChf, fmtTime, fmtDay, bikeTitle } from "../ui.js";
 
 export async function render(view, { id, query }) {
   show(view, el("p", {}, el("a", { href: "#/catalogue" }, "← Back to the catalogue")), loading());
@@ -81,7 +81,8 @@ async function drawRent(area, bike, query) {
       el("p", { class: "muted small" }, `Deposit at pick-up: twice the rental price, at most ${fmtChf(rate.deposit_chf)}, paid back on return.`),
     ] : message("warning", "There is no price for this kind of bike yet."),
     bike.status !== "available"
-      ? message("warning", `This bike is in ${bike.status} and cannot be booked right now.`) : null,
+      ? message("warning", `This bike is in ${bike.status} and cannot be booked right now.`
+        + (bike.ready_estimate ? ` We expect it back on ${fmtDay(bike.ready_estimate)}; that is an estimate.` : "")) : null,
     el("h2", {}, "When do you need it?"),
     el("div", { id: "picker" }, loading()),
     quoteArea,

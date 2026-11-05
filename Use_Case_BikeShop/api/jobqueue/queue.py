@@ -56,10 +56,17 @@ def enqueue(db: Session, kind: str, payload: dict, *, user_id: Optional[str] = N
     return job
 
 
-def claim(db: Session, worker_id: str) -> Optional[Claimed]:
-    """Claim the oldest due queued job, or return None. Commits."""
+def claim(db: Session, worker_id: str, only: tuple = (), skip: tuple = ()) -> Optional[Claimed]:
+    """
+    Claim the oldest due queued job, or return None. Commits.
+    `only` and `skip` limit it to some kinds of job (the worker's lanes, SPEC §14.10).
+    """
     now = utcnow()
     due = and_(T.c.status == QUEUED, T.c.run_after <= now)
+    if only:
+        due = and_(due, T.c.kind.in_(only))
+    if skip:
+        due = and_(due, T.c.kind.not_in(skip))
     # A plain read first: an empty queue doesn't take the write lock every poll.
     if db.execute(select(T.c.id).where(due).limit(1)).first() is None:
         return None

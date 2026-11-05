@@ -27,7 +27,8 @@ frontend/
         ├── staff-prices.js    rental price list editor
         ├── staff-orders.js    complete or cancel reservations, scheduler status
         ├── staff-analytics.js anonymous analytics: totals, top bikes, per day
-        └── staff-jobs.js      background jobs: status, attempts, errors
+        ├── staff-jobs.js      background jobs: status, attempts, errors
+        └── staff-workshop.js  the Workshop: scans, the agent's brief, discussion, plans (SPEC §14)
 ```
 
 | page | address (hash route) | who sees it |
@@ -44,6 +45,7 @@ frontend/
 | Orders | `#/staff/orders` | staff |
 | Analytics | `#/staff/analytics` | staff |
 | Jobs | `#/staff/jobs` | staff |
+| Workshop | `#/staff/workshop`, one case `#/staff/workshop?case=<id>` | staff |
 
 **The footer** of every page links to **Help · Privacy · Terms**: `/help`,
 `/legal/privacy` and `/legal/terms`. Those are not pages of this frontend but

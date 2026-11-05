@@ -284,6 +284,35 @@ class RentalService:
         db.refresh(rental)
         return rental
 
+    def move_booking(self, db: Session, rental_id: int, bike_id: int) -> Rental:
+        """
+        Staff: move a booked rental to another free bike, at that bike's price,
+        after the customer agreed (SPEC §14.7). Same checks as a new booking.
+        """
+        start_write_transaction(db)
+        try:
+            rental = self.get_rental(db, rental_id)
+            if rental.status != RentalStatus.booked:
+                raise Conflict(f"This rental is {rental.status.value}; only booked rentals can be moved.")
+            now = utcnow()
+            bike = self._rental_bike(db, bike_id)
+            if bike.status != BikeStatus.available:
+                raise Conflict(f"{bike.name} ({bike.code}) is in maintenance and can't be booked right now.")
+            other = self._blocking_rental(db, bike.id, rental.start_at, rental.end_at, now)
+            if other:
+                raise Conflict(self._taken_message(bike, other, now))
+            rate = self._rate(db, bike.category)
+            rental.bike_id, rental.hourly_chf, rental.daily_chf = bike.id, rate.hourly_chf, rate.daily_chf
+            rental.quoted_price_chf = rental_price(rental.start_at, rental.end_at,
+                                                   rate.hourly_chf, rate.daily_chf).total_chf
+            db.add(rental)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        db.refresh(rental)
+        return rental
+
     # ------------------------------------------------------------ for responses
 
     def describe(self, db: Session, rental: Rental, with_username: bool = False) -> dict:

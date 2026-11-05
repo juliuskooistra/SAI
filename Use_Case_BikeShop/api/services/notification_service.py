@@ -65,6 +65,12 @@ class NotificationService:
              f"We hold it until {format_local(order.expires_at)}. After that it is for sale again."],
             "See your orders")
 
+    def booking_problem(self, db: Session, rental: Rental, text: str) -> Optional[int]:
+        """Staff's own words about a booking the Workshop affects (SPEC §14.7)."""
+        bike = db.get(Bike, rental.bike_id)
+        return self._enqueue(db, rental.user_id, f"About your booking of {bike.name} on {format_local(rental.start_at)}",
+                             [line for line in text.splitlines() if line.strip()], "See your bookings")
+
     def reservation_expired(self, db: Session, order: Order) -> Optional[int]:
         bike = db.get(Bike, order.bike_id)
         return self._enqueue(

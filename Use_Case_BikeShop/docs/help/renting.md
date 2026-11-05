@@ -28,6 +28,10 @@ More rules:
 To see which bikes are free for a period, use **Check availability** on the
 Rent tab: it lists the free bikes with their price for exactly that period.
 
+A bike in repair stays on the list as **in maintenance**, with the date we expect
+it back. You can't book it until it is back, and the date is an estimate. Use the
+**Availability** filter to see only bikes you can book, or only those in maintenance.
+
 ## How the price is calculated
 
 Every bike category has an **hourly rate** and a **daily rate**. The daily

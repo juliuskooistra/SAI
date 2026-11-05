@@ -108,6 +108,29 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8130")   # links in email
 # Empty: the website's assistant has no escalate_to_staff tool.
 SHOP_STAFF_EMAIL = os.getenv("SHOP_STAFF_EMAIL", "").strip()
 
+# ---------------------------------------------------------------- the Workshop (SPEC §14)
+WORKSHOP_MODEL = os.getenv("WORKSHOP_MODEL", "glm-5.3-flash")   # its own setting: the assistant keeps MLMP_MODEL
+WORKSHOP_MAX_ROUNDS = 10              # model calls per stage: research, plus room to fix a refused result
+WORKSHOP_MAX_STAFF_MESSAGES = 10      # per discussion
+WORKSHOP_HISTORY_MESSAGES = 10        # discussion messages resent to the model
+WORKSHOP_TOOL_RESULT_CHARS = 6000
+# A call we give up on keeps running at BFH and keeps one of the 2 parallel slots for minutes, so
+# timing out early and trying again fills both slots by itself (found 2026-11-04). Be patient, once.
+WORKSHOP_CALL_TIMEOUT_SECONDS = 240
+WORKSHOP_MAX_REPLY_TOKENS = 8000      # a thinking model may otherwise think for many minutes
+WORKSHOP_CHAT_REPLY_TOKENS = 3000     # in a discussion a person is waiting for an answer
+WORKSHOP_CHAT_ROUNDS = 3              # model calls per discussion answer
+WORKSHOP_RETRIES = 1                  # no automatic second try: staff get a Retry button
+WORKSHOP_RETRY_SECONDS = 30           # how long to wait when BFH says it is full (429)
+# BFH allows 30 requests and 150k tokens a minute, shared with the assistant (SPEC §14.10)
+WORKSHOP_REQUESTS_PER_MINUTE = 20
+WORKSHOP_TOKENS_PER_MINUTE = 100_000
+MECHANIC_HOURS_PER_DAY = Decimal("6")
+MECHANIC_CHF_PER_HOUR = Decimal("60")
+SALE_TARGET_MARGIN = Decimal("0.25")  # of the selling price (SPEC §14.8)
+AS_IS_DISCOUNT = Decimal("0.35")      # selling without repairing
+SCRAP_SHARE = Decimal("0.05")         # what the parts of a scrapped bike fetch, of market value
+
 # ---------------------------------------------------------------- analytics (SPEC §5.10)
 ANALYTICS_KEEP_DAYS = 365
 

@@ -42,6 +42,7 @@ set -a; . ./.env; set +a                                     # the app doesn't r
 # Demo data in api/data/bikeshop.db: bikes, accounts, a few rentals ...
 SEED_STAFF_PASSWORD=staff-pass-123 SEED_CUSTOMER_PASSWORD=customer-pass-123 .venv/bin/python -m scripts.seed
 .venv/bin/python -m scripts.seed_history                     # ... then a year of past usage (SPEC §9.1)
+.venv/bin/python -m scripts.seed_workshop                    # ... then the Workshop's data (SPEC §14.12)
 ```
 
 The deployed database can't be reached from outside: develop against this

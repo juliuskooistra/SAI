@@ -9,6 +9,8 @@ use case after the lecture *From prototype to production*. Live demo:
 - **Where each part sits on the lecture's map**: [MAP.md](MAP.md)
 - **The AI assistant and its tools** (the tool-calling lesson):
   [ASSISTANT.md](ASSISTANT.md)
+- **The Workshop, an AI maintenance agent for staff** (the LLM workflow lesson):
+  [WORKSHOP.md](WORKSHOP.md)
 - Middlewares: [MIDDLEWARE_ARCHITECTURE.md](MIDDLEWARE_ARCHITECTURE.md) ·
   Frontend: [FRONTEND.md](FRONTEND.md) · Docker: [BACKEND.md](BACKEND.md) ·
   Server: [DEPLOY.md](DEPLOY.md)
@@ -50,6 +52,12 @@ planted patterns to find, SPEC §9.1), run this once afterwards:
 .venv/bin/python -m scripts.seed_history
 ```
 
+For the Workshop (more bikes, bookings ahead, scans and the planted cases, SPEC §14.12):
+
+```bash
+.venv/bin/python -m scripts.seed_workshop
+```
+
 # Running the API
 
 ```bash
@@ -89,7 +97,8 @@ The demo runs on **Azure Container Apps**, with Litestream keeping the SQLite
 database in Azure Blob Storage (SPEC §10.2). Every merge to `main` deploys
 through GitHub Actions: tests, image `bikeshop:<commit>`, staging, then
 production after the lecturer's approval (SPEC §10.4). Setting it up, and
-deploying by hand: [DEPLOY-azure.md](DEPLOY-azure.md). Costs: [COSTS.md](COSTS.md).
+deploying by hand: [DEPLOY-azure.md](DEPLOY-azure.md), which also has the steps for the
+Workshop's data. Costs: [COSTS.md](COSTS.md).
 
 The alternative, Docker Compose behind nginx on your own VM (SPEC §10.1), is
 in [DEPLOY.md](DEPLOY.md).
