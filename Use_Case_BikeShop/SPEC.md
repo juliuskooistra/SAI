@@ -964,12 +964,17 @@ browser ─HTTPS─► bikeshop (one container app, 0–1 instances)
   write to the same path for a minute or two, and that can break the copy for
   good: on 2026-11-04 it did, on staging, and every later start failed in
   `litestream restore` ("nonsequential page numbers"). So such changes go
-  through `deploy/azure/update.sh`, which first deactivates the running
-  revision and waits until it has stopped (Litestream copies its last changes
-  on SIGTERM), and only then makes the new one. The price is about a minute
-  of downtime per deploy, which the demo accepts. If the old revision can't
-  be stopped, the script makes no change. Only changes that make no
-  revision, such as `az containerapp secret set`, may skip it.
+  through `deploy/azure/update.sh`, which **stops the whole app** (Azure's
+  `containerApps/stop`) and waits until no revision has a replica (Litestream
+  copies its last changes on SIGTERM), then makes the new revision while the
+  app is stopped (it is made but doesn't run), then **starts** the app, which
+  runs only the new revision. If anything fails after the stop, the script
+  still starts the app, so it is never left stopped. The price is about a
+  minute of downtime per deploy, which the demo accepts. If the app can't be
+  stopped, the script makes no change. Only changes that make no revision,
+  such as `az containerapp secret set`, may skip it. Deactivating just the
+  old revision is not enough: during the update Azure starts the last ready
+  revision again until the new one is ready (seen on staging, 2026-11-05).
 - **Data loss window**: what was written in the last ~1 s before a crash.
 - **Region**: Switzerland North (data in Switzerland). Storage account and
   apps in the same region.
@@ -1672,16 +1677,18 @@ Files: `api/jobqueue/queue.py`, `scripts/worker.py`, `api/services/llm_service.p
 Files: `deploy/azure/update.sh` (new), `deploy/azure/release.sh`,
 `DEPLOY-azure.md`, `tests/test_s33_deploy_one_writer.py`.
 
-- **Given** an app with a running revision, **when** `update.sh <app> <args>`
-  runs, **then** it deactivates every active revision and waits until none has
-  a replica, and only then runs `az containerapp update <args>`: at no moment
-  do two revisions run.
-- **Given** a revision that can't be deactivated, or still has a replica after
-  2 minutes, **then** the script stops with a message and the app is not
-  updated.
+- **Given** a running app, **when** `update.sh <app> <args>` runs, **then** it
+  stops the app and waits until it reports `Stopped` and no revision has a
+  replica; only then it runs `az containerapp update <args>`, and only after
+  that it starts the app: at no moment do two revisions run.
+- **Given** an app that can't be stopped, **then** the script stops with a
+  message and the app is not updated.
+- **Given** an app that still has a replica after 2 minutes, or an update
+  that fails, **then** the script starts the app again (the old revision
+  comes back), says so, and fails.
 - **Given** the same image again (a re-run), **then** a new revision is still
-  made (a unique `--revision-suffix`), so the app doesn't stay stopped.
-- **Given** the update, **then** the script waits for `/health` with
+  made (a unique `--revision-suffix`).
+- **Given** the start, **then** the script waits for `/health` with
   `"database":"ok"`, each try at most 20 s and 5 minutes in all, and fails
   with the app's name if it doesn't come.
 - **Given** `release.sh <app> <image>`, **then** it deploys through
@@ -1690,11 +1697,13 @@ Files: `deploy/azure/update.sh` (new), `deploy/azure/release.sh`,
   a running app uses `update.sh` or `release.sh`, not a plain
   `az containerapp update`.
 - **Tests** (offline): the scripts run against a fake `az` and `curl` that
-  record their calls, so the order deactivate → wait → update → health is
+  record their calls, so the order stop → wait → update → start → health is
   checked without Azure.
 - **Manual**, on staging: deploy twice in a row; in the logs, the old
   revision's `litestream shut down` comes before the new one's `restoring`,
-  and the restore succeeds.
+  the old revision logs nothing after that, and the restore succeeds.
+  (Done by hand on 2026-11-05: shut down 15:29:43, restore 15:31:43, nothing
+  in between.)
 
 ## 12. Decisions log
 
@@ -1829,6 +1838,12 @@ No open questions. Decided 2026-11-02:
   last good point (§10.2). Rejected: a lock in `start.sh` that makes a second
   container wait (Azure keeps the old revision until the new one is ready, so
   they would wait for each other); multiple-revision mode (still two at once).
+- 2026-11-05, later: **stop the whole app, not just the old revision.** The first
+  version deactivated the old revision, but on the first deploy with it Azure
+  started that revision again 20 s into the update and both ran for 50 s (the
+  copy survived by luck). An app stopped with `containerApps/stop` runs nothing,
+  takes the update without starting it, and `start` runs only the new revision:
+  tested on staging the same day.
 
 ---
 
