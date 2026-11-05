@@ -57,6 +57,8 @@ def _readable(sdk, error, model):
     """Turn the SDK's error into an AIError with a sentence, or None to let it crash."""
     if isinstance(error, sdk.RateLimitError):
         return Busy()
+    if isinstance(error, sdk.APITimeoutError):     # a kind of connection error: test it first
+        return AIError("The AI service took too long to answer. Please try again.")
     if isinstance(error, sdk.APIConnectionError):
         return AIError("Can't reach the AI service. Check the internet connection, or that the "
                        "service (e.g. Ollama) is running.")

@@ -54,6 +54,9 @@ set -a; . ./.env; set +a          # needs MLMP_API_KEY; the model is WORKSHOP_MO
 Sign in as `staff` and open **Workshop**. Start with `R-EBIKE-10` under *Waiting for
 the machine*: press **Run scan**, then **Analyse with the agent**.
 
+Deploying it, and adding its data to a deployed app:
+[DEPLOY-azure.md](DEPLOY-azure.md#the-workshop-staffs-ai-maintenance-agent).
+
 ## Seven ideas to take away
 
 1. **Pause for a person without holding anything in memory.** A case can wait a

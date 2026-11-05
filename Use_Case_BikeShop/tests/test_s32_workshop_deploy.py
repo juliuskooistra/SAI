@@ -8,6 +8,8 @@ database made by the previous one.
 import threading
 from datetime import timedelta
 
+import httpx
+import openai
 import pytest
 from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel
@@ -17,6 +19,7 @@ from api.database import engine, init_database
 from api.jobqueue import queue
 from api.jobqueue.handlers import HANDLERS
 from api.models.models import Job
+from api.services import llm_service
 from scripts import seed, seed_history, seed_workshop, worker
 from tests.conftest import NOW
 
@@ -104,6 +107,13 @@ def test_once_runs_everything_in_one_line(handlers):
     add_job("workshop_step"), add_job("assistant_reply")
     assert worker.Worker().run_cycle() == 2
     assert handlers == ["workshop_step", "assistant_reply"]
+
+
+# ---------------------------------------------------------------- a call over the time limit
+
+def test_a_timeout_says_it_took_too_long():
+    error = openai.APITimeoutError(request=httpx.Request("POST", "https://example.test"))
+    assert "took too long" in str(llm_service._readable(openai, error, "glm-5.3-flash"))
 
 
 # ---------------------------------------------------------------- upgrading a database

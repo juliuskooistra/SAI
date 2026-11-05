@@ -1632,7 +1632,7 @@ Files: `WORKSHOP.md`, `scripts/workshop_evaluate.py`, `MAP.md`, `map.html`,
   a live scan of a just-returned bike takes under 10 seconds.
 
 ### S32 Deploying the Workshop (§14.10, §14.13)
-Files: `api/jobqueue/queue.py`, `scripts/worker.py`, `DEPLOY-azure.md`,
+Files: `api/jobqueue/queue.py`, `scripts/worker.py`, `api/services/llm_service.py`, `DEPLOY-azure.md`,
 `tests/test_s32_workshop_deploy.py`.
 
 - **Given** a Workshop round running in the worker, **when** a customer's assistant
@@ -1640,6 +1640,8 @@ Files: `api/jobqueue/queue.py`, `scripts/worker.py`, `DEPLOY-azure.md`,
 - **Given** the worker's loop, **then** at most one Workshop round runs at a time,
   and the main loop never takes one (BFH's 2 concurrent requests).
 - **Given** `--once`, **then** every job runs in one line, as before.
+- **Given** a model call over the time limit, **then** the message says it took too
+  long, not that the service can't be reached.
 - **Given** a database made by the previous release, with no Workshop tables,
   **when** the new app starts and `scripts.seed_workshop` runs, **then** the tables
   exist, every old row is unchanged, and the seed works, also if the history was
@@ -2263,7 +2265,7 @@ requests, 30 requests and 150k tokens per minute** (§8.1).
   library and none by us: a call given up on keeps running at BFH and holds one of
   the 2 parallel slots for minutes, so retrying fills both by itself (found
   2026-11-04). On a 429 the agent waits 30 s and the page says so. A failed call
-  shows staff a Retry button. A job lost in a restart is
+  shows staff a Retry button, and a call over the limit says it took too long. A job lost in a restart is
   noticed by `notice_lost_agent()`, so a page never waits for nothing.
 - **A discussion is a conversation**: the agent gets the findings, options and
   bookings in its first message and answers at once, with 3 look-up tools,

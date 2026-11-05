@@ -271,6 +271,90 @@ Wait about 10 seconds before you leave, so Litestream has copied the new rows.
 Running it again prints `history exists, skipped`. Then the same for
 `--name bikeshop`.
 
+## The Workshop (staff's AI maintenance agent)
+
+The Workshop (SPEC §14) needs **no new package, secret, setting or service**. It
+uses the MLMP key the assistant already has, and the pipeline deploys it like any
+other change. Its tables appear by themselves at the first start, and no existing
+row changes. Only its demo data is added by hand, once per app.
+
+You need the Azure CLI, signed in, with access to the `bikeshop-rg` resource group.
+
+**1. Merge the pull request.** The pipeline tests it, builds the image and deploys
+it to staging. Don't approve production yet.
+
+**2. Check staging.** Wake it up and open a shell inside it:
+
+```bash
+RG=bikeshop-rg
+curl -s https://$(az containerapp show --name bikeshop-staging --resource-group $RG \
+  --query properties.configuration.ingress.fqdn -o tsv)/health      # wake it up
+az containerapp exec --name bikeshop-staging --resource-group $RG --command sh
+```
+
+Inside the container, check that this app's MLMP key may use the Workshop's model.
+`/health` can't tell you: it only tests the assistant's model.
+
+```bash
+python -c "from api import config; from api.services.inference_service import InferenceService as I; print(config.WORKSHOP_MODEL, config.WORKSHOP_MODEL in [m.id for m in I().get_client().models.list()])"
+```
+
+It must print `glm-5.3-flash True`. If it prints `False`, see the table below.
+
+**3. Add the data**, still inside the container. Both scripts are safe to run again:
+each one prints `skipped` if its data is already there. They take seconds.
+
+```bash
+python -m scripts.seed_history       # a year of past usage; the Workshop needs its customers
+python -m scripts.seed_workshop      # prints "20 bikes, 10 suppliers, … rentals"
+```
+
+Wait about 10 seconds before you `exit`, so Litestream has copied the new rows.
+The dates count from the day you run it, and **it runs only once per database**,
+so run it close to the lecture: a planted "pick-up tomorrow" doesn't stay tomorrow.
+
+**4. Try it on staging.** Sign in as `staff`, open *Workshop*, open a case and press
+**Analyse with the agent**. The brief usually takes 3 to 10 minutes, the model thinks
+long before it writes. Keep the page open.
+
+**5. Approve production** in the Actions tab, then repeat steps 2 and 3 with
+`--name bikeshop`.
+
+Good to know:
+
+- **The seed adds invented data to the app**: 20 rental bikes, invented bookings
+  on them, 10 fictional suppliers and scans. Customers see the new bikes. Its
+  customers have `.test` addresses, so no email goes to anyone.
+- **Keep the page open during an analysis.** The page asks for news every 2 seconds,
+  which keeps the app awake. If everyone leaves, the app scales to zero and the
+  round stops. Nothing is lost: on the next visit the case says "The agent stopped"
+  and **Retry** carries on.
+- **Tokens**: one analysis used about 64,000 tokens of the MLMP key in our test. The
+  agent stays under 20 requests and 100,000 tokens a minute, leaving room for the
+  website's assistant, and it waits by itself when MLMP is busy.
+- **A rollback is safe**: re-run the production job of an earlier successful run. The
+  old version ignores the Workshop's tables, and they're there again when you
+  redeploy. Run a rollback while no analysis is running. Bikes that staff put
+  in maintenance stay in maintenance.
+
+To use another model, for example if the deployment's key isn't allowed
+`glm-5.3-flash` (this restarts the app, and the model must support tool calls):
+
+```bash
+az containerapp update --name bikeshop --resource-group $RG --set-env-vars WORKSHOP_MODEL=<model>
+```
+
+| what you see | cause | fix |
+|---|---|---|
+| "BFH inference is not configured" when you press Analyse | the app has no MLMP key | `printf "MLMP key: "; read -rs MLMP_KEY; echo`, `az containerapp secret set --name <app> --resource-group $RG --secrets "mlmp-key=$MLMP_KEY"`, then `az containerapp update --name <app> --resource-group $RG --set-env-vars MLMP_API_KEY=secretref:mlmp-key` |
+| the model check prints `False` | this key may not use the model | ask for access, or set `WORKSHOP_MODEL` as above |
+| "The agent stopped" | the app restarted or scaled to zero during a round | press **Retry** |
+| "The AI service took too long to answer" | one model call passed the 240-second limit, most likely the one that writes the brief | press **Retry**: the agent carries on from where it was |
+| "The AI service refused the key" | the MLMP key is wrong or expired (they last 180 days) | set a new key as in the first row |
+| "Waiting for AI capacity" | MLMP's limits, shared with the assistant | nothing: the agent carries on by itself |
+| `Run python -m scripts.seed and scripts.seed_history first.` | the app has no history yet | run `scripts.seed_history`, then the seed again |
+| the *Workshop* list is empty | the seed hasn't run on this app | step 3 |
+
 ## Getting at the data
 
 The database is a SQLite file inside the container: there's no port to
